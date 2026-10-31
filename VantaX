@@ -1,11 +1,8 @@
-local _2a393fd = (function()
+-- VETERANO TEAM: loader sem tela de Key / autenticação.
+-- Mantém a biblioteca Slate, os efeitos visuais e todas as opções originais.
 local _ae73dd7 = (getgenv and getgenv()) or _G
+if _ae73dd7.__VT_PORTAL_LOGIN_CANCEL then pcall(_ae73dd7.__VT_PORTAL_LOGIN_CANCEL) end
 if _ae73dd7.__VETERANO_SINTONIA_CLEANUP then pcall(_ae73dd7.__VETERANO_SINTONIA_CLEANUP) end
-if _ae73dd7.__VT_LOGIN_GUI then
-    pcall(function() _ae73dd7.__VT_LOGIN_GUI:Destroy() end)
-    _ae73dd7.__VT_LOGIN_GUI = nil
-end
-local _52e6147 = game:GetService("HttpService")
 local _37a4483 = game:GetService("TweenService")
 local _390549f = game:GetService("ContentProvider")
 local _7b323ef = game:GetService("Players")
@@ -14,62 +11,15 @@ while not _a89e23b do task.wait(); _a89e23b = _7b323ef.LocalPlayer end
 local _0213586 = _a89e23b:WaitForChild("PlayerGui")
 local _9f51450 = game:GetService("RunService")
 local _85f7c66 = game:GetService("Debris")
-local _28ae7ac = nil
-local function _2166d91 ( )
-local _b131a3f = Instance . new ( "ScreenGui" )
-_b131a3f . Name = "VeteranoIntro"
-_b131a3f . IgnoreGuiInset = true
-_b131a3f . ResetOnSpawn = false
-_b131a3f . DisplayOrder = 1500
-_b131a3f . Parent = _0213586
-_28ae7ac = _b131a3f
-
-local _abda2ee = Instance . new ( "Frame" )
-_abda2ee . Size = UDim2 . fromScale ( 1 , 1 )
-_abda2ee . BackgroundTransparency = 1
-_abda2ee . Parent = _b131a3f
-
-local _2814dec = Instance . new ( "Sound" )
-_2814dec . SoundId = "rbxassetid://4590662766"
-_2814dec . Volume = 0.6
-_2814dec . Parent = _abda2ee
-
-local _d0b9938 = "100616567875669"
-local _195a92c = Instance . new ( "ImageLabel" )
-_195a92c . Size = UDim2 . fromOffset ( 50 , 50 )
-_195a92c . Position = UDim2 . fromScale ( 0.5 , 0.5 )
-_195a92c . AnchorPoint = Vector2 . new ( 0.5 , 0.5 )
-_195a92c . BackgroundTransparency = 1
-_195a92c . Image = "rbxthumb://type=Asset&id=" .. _d0b9938 .. "&w=420&h=420"
-_195a92c . ImageTransparency = 1
-_195a92c . Parent = _abda2ee
-
-task . spawn ( function ( ) pcall ( function ( ) _390549f : PreloadAsync ( { _195a92c , _2814dec } ) end ) end )
-
-task . wait ( 0.2 )
-pcall ( function ( ) _2814dec : Play ( ) end )
-
-_37a4483 : Create ( _195a92c , TweenInfo . new ( 0.7 , Enum . EasingStyle . Back , Enum . EasingDirection . Out ) , {
-ImageTransparency = 0 ,
-Size = UDim2 . fromOffset ( 180 , 180 )
-} ) : Play ( )
-
-task . wait ( 4.5 )
-
-_37a4483 : Create ( _195a92c , TweenInfo . new ( 0.6 , Enum . EasingStyle . Quint , Enum . EasingDirection . In ) , {
-ImageTransparency = 1 ,
-Size = UDim2 . fromOffset ( 1500 , 1500 ) ,
-Rotation = 180
-} ) : Play ( )
-
-task . wait ( 0.6 )
-_b131a3f : Destroy ( )
-_28ae7ac = nil
-
-
+local _32fb1a6, _28ae7ac, _26d2a65 = false, nil, nil
+local function _c3bc9fb()
+    _32fb1a6 = true
+    if _28ae7ac then pcall(function() _28ae7ac:Destroy() end) end
+    if _26d2a65 and not _26d2a65.Destroyed then pcall(function() _26d2a65:Destroy() end) end
 end
-pcall(_2166d91)
-if _28ae7ac then pcall(function() _28ae7ac:Destroy() end); _28ae7ac = nil end
+_ae73dd7.__VT_PORTAL_LOGIN_CANCEL = _c3bc9fb
+local _0522009 = "https://discord.com/invite/vNKTAtTwFu"
+local _2a393fd = (function()
 local _a731776 = "https://raw.githubusercontent.com/PulseZax/Slate/refs/heads/main/.lua"
 local _0f60308 = loadstring ( game : HttpGet ( _a731776 ) , "@Slate" ) ( )
 
@@ -549,15 +499,13 @@ end
 return {
     Slate = _0f60308,
     Accent = _7b988b0,
-    Discord = "https://discord.com/invite/vNKTAtTwFu",
+    Discord = _0522009,
     Apply = _b8cfc1e,
     Attach = _45d3301,
     SetReducedMotion = function(value) _d785a08 = value == true end,
 }
-
 end)()
 if not _2a393fd then return end
-
 local _5050b65 = _2a393fd . Slate
 
 
