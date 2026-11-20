@@ -1,520 +1,398 @@
-local aQ=("https://raw.githubusercontent.com/PulseZax/Slate/refs/heads/main/.lua")local aR=loadstring(game:HttpGet(aQ),("@Slate"))()pcall(function()aR.Cleanup()end)pcall(function()aR:PreloadIcons({("lucide")})end)local aS={Background=Color3.fromRGB(18,12,26),Surface=Color3.fromRGB(23,16,33),SurfaceAlt=Color3.fromRGB(30,20,43),Elevated=Color3.fromRGB(36,24,52),Border=Color3.fromRGB(100,60,160),Line=Color3.fromRGB(60,38,88),Text=Color3.fromRGB(240,232,250),Muted=Color3.fromRGB(160,132,190),Faint=Color3.fromRGB(110,88,140),Accent=Color3.fromRGB(168,100,255),OnAccent=Color3.fromRGB(18,10,30),Success=Color3.fromRGB(120,220,160),Warning=Color3.fromRGB(240,190,90),Danger=Color3.fromRGB(245,90,120),ToggleOn=Color3.fromRGB(168,100,255),ToggleKnob=Color3.fromRGB(250,246,255),Info=Color3.fromRGB(130,170,255)}pcall(function()if aR.Theme and aR.Theme.Set then aR.Theme:Set(aS)end end)pcall(function()aR.Theme.Preset(("Violet"))end)pcall(function()aR:SetFontFamily(("JosefinSans"))end)local i=game:GetService(("Players"))local k=game:GetService(("RunService"))local l=game:GetService(("UserInputService"))local j=game:GetService(("TweenService"))local n=game:GetService(("Lighting"))local o=game:GetService(("GuiService"))local aT=game:GetService(("TeleportService"))local aU=game:GetService(("CollectionService"))local m=game:GetService(("HttpService"))local aV=game:GetService(("ReplicatedStorage"))local aW=i.LocalPlayer;local aX=getgenv and getgenv()or _G;cloneref=cloneref or function(C)return C end;gethui=gethui or get_hidden_gui;protect_gui=protect_gui or protectgui or syn and syn.protect_gui;if aX.__VORTEX_HUB_CLEANUP then pcall(aX.__VORTEX_HUB_CLEANUP)end;local aY=1500;local aZ={monitorarStaff=false,sorte2xEnabled=false,espEnabled=false,box=false,name=false,distance=false,heldItem=false,skeleton=false,highlight=false,tracer=false,arrow=false,box3d=false,teamTag=false,hideTeamEsp=false,npcEsp=true,aimbotNpc=true,npcSkipProtected=true,maxDistance=aY,bundles={},spoofWalkEnabled=false,spoofJumpEnabled=false,spoofWalkSpeed=40,spoofJumpPower=90,walkSpeedKeybind=Enum.KeyCode.V,menuKeybind=Enum.KeyCode.K,noclipEnabled=false,noclipKeybind=Enum.KeyCode.N,flyEnabled=false,flyKeybind=Enum.KeyCode.F,flySpeed=60,ghostEnabled=false,aimbotEnabled=false,aimbotMode=("Legit"),aimbotFov=120,aimbotDistance=500,aimbotVisibleOnly=false,aimbotFovVisible=false,aimbotHitChance=100,aimbotBodyPart=("Cabeca"),aimbotSmoothness=0.15,aimbotTargetMode=("Closest"),aimbotWallCheck=true,aimbotTeamCheck=true,aimbotKeybind=Enum.KeyCode.E,friendCheck=true,adminCheck=true,armaTracer=false,armaTracerCor=("Ciano"),perfectLockpick=false,returnOnWeaponPickup=true,pullWeaponsEnabled=false,autoFarmLixeiroEnabled=false,autoFarmLixeiroQuantidade=20,farmPartesEnabled=false,durabilidadeHudEnabled=false,autoCintoEnabled=false,noclipCarEnabled=false,vFlyEnabled=false,vFlyHorizontalSpeed=60,vFlyVerticalSpeed=30,boostFactor=1,fullbright=false,noLag=false,autoFarmPescaEnabled=false,autoColetaEnabled=false,autoColetaCooldown=0.35,coletaHudEnabled=false,coletaYOffset=3,coletaReachDistance=4,camuflarNickEnabled=false,carEspEnabled=false,carEspDistance=1500}local a_={connections={},placeMatched=tostring(game.PlaceId)==("125299131646017"),destroyed=false,itemTeleportRunId=0,farmPartesRunId=0,farmPartesColetadas=0,garbageFarmRunId=0,garbageFarmStatus=("Stopped"),durabilidadeRunId=0,relationships={},relationshipConnections={},staffCount=0,staffNames={},pescaRunId=0,pescaStatus=("Stopped"),pescaColetados=0,coletaRunId=0,coletaHudRunId=0}aX.__VORTEX_HUB_RUNTIME=a_;a_.state=aZ;local function b0(b1)table.insert(a_.connections,b1)return b1 end;local function b2(aM)pcall(function()aR:Notify({Title=("Vortex Hub"),Description=tostring(aM),Duration=3,Tone=("Info")})end)end;local function b3()local b4=aW.Character;return b4 and b4:FindFirstChildOfClass(("Humanoid"))or nil end;local function b5()local b4=aW.Character;return b4 and b4:FindFirstChild(("HumanoidRootPart"))end;local bp={}do local bq=254;local br=Color3.fromRGB(60,210,255)local bs=Color3.fromRGB(170,70,255)local bt=Color3.fromRGB(255,20,40)local bu={("admin"),("staff"),("moder"),("owner"),("founder"),("creator"),("developer"),("dono"),("fundador"),("gerente"),("supervis"),("diretor"),("gestor")}local function bv(O)O=string.lower(tostring(O or("")))for aO,L in ipairs(bu)do if string.find(O,L,1,true)then return true end end;return false end;local function bw(C)local bx=typeof(C)if bx==("boolean")then return C end;if bx==("number")then return C>0 end;if bx==("string")then local O=string.lower(C)return O~=("")and O~=("false")and O~=("0")and O~=("none")and O~=("guest")and O~=("member")end;return C~=nil end;local function by(bz)local bA=aX.VORTEX_HUB_STAFF_USER_IDS;if type(bA)~=("table")then return false end;return bA[bz.UserId]==true or bA[tostring(bz.UserId)]==true or table.find(bA,bz.UserId)~=nil end;local function bB(bz)if by(bz)then return true,("configured")end;if game.CreatorType==Enum.CreatorType.User and bz.UserId==game.CreatorId then return true,("creator")end;local bC,bD=pcall(function()return bz:GetAttributes()end)if bC then for L,C in pairs(bD)do if bv(L)and bw(C)then return true,("attribute:")..L end end end;local bE,bF=pcall(aU.GetTags,aU,bz)if bE then for aO,bG in ipairs(bF)do if bv(bG)then return true,("tag:")..bG end end end;return false,nil end;local function bH(bz)local bI=a_.relationships[bz]if bI then return bI end;bI={ready=false,checking=false,friend=false,admin=false,rank=0,role=(""),source=nil}a_.relationships[bz]=bI;return bI end;local function bJ(bz)if bz==aW or bz.Parent~=i then return end;local bK=bH(bz)if bK.checking then return end;bK.checking=true;task.spawn(function()local bL=false;local bM,v=pcall(function()return aW:IsFriendsWith(bz.UserId)end)if bM then bL=v==true end;local bN,bf=bB(bz)local bO,bP=0,("")if game.CreatorType==Enum.CreatorType.Group and game.CreatorId>0 then local bQ,bI=pcall(function()return bz:GetRankInGroup(game.CreatorId)end)if bQ and type(bI)==("number")then bO=bI end;local bR,bS=pcall(function()return bz:GetRoleInGroup(game.CreatorId)end)if bR and type(bS)==("string")then bP=bS end;if bO>=bq then bN,bf=true,("group-rank:")..bO elseif bv(bP)then bN,bf=true,("group-role:")..bP end end;if bz.Parent==i and a_.relationships[bz]==bK then bK.friend=bL;bK.admin=bN;bK.rank=bO;bK.role=bP;bK.source=bf;bK.ready=true;bK.checking=false end end)end;local function bT(bz)local bI=bH(bz)if not bI.ready and not bI.checking then bJ(bz)end;return bI end;function bp.Protected(bz)local bI=bT(bz)if(aZ.friendCheck or aZ.adminCheck)and not bI.ready then return true end;if aZ.adminCheck and bI.admin then return true end;if aZ.friendCheck and bI.friend then return true end;return false end;bp.Admin=function(bz)local bI=bT(bz)return bI.ready and bI.admin end;bp.Appearance=function(bz)local bI=bT(bz)if bI.ready and(aZ.adminCheck and bI.admin)then return bt,(" [STAFF]")end;if bI.ready and(aZ.friendCheck and bI.friend)then return br,(" [FRIEND]")end;return bs,("")end;local function bU(bz)if bz==aW then return end;bJ(bz)local b1=bz.AttributeChanged:Connect(function(bV)if bv(bV)then local bI=a_.relationships[bz]if bI then bI.ready=false end;bJ(bz)end end)a_.relationshipConnections[bz]=b1;b0(b1)end;for aO,bz in ipairs(i:GetPlayers())do bU(bz)end;b0(i.PlayerAdded:Connect(bU))b0(i.PlayerRemoving:Connect(function(bz)a_.relationships[bz]=nil;a_.relationshipConnections[bz]=nil end))end;local bW=Vector3.zero;task.spawn(function()while not a_.destroyed do local bX=b3()if bX then bW=bX.MoveDirection end;task.wait(0.05)end end)local bY=28;local function bZ()return(a_.acSilenciados or 0)>0 and(a_.acMotivosVivos==nil or#a_.acMotivosVivos==0)end;local b_={[Enum.HumanoidStateType.Seated]=true,[Enum.HumanoidStateType.Dead]=true,[Enum.HumanoidStateType.Climbing]=true}local c0=0.5;local h=18;local b4=34;local c1=36;local c2=0.08;local c3=16;local function c4(c5,c6)local c7=0;for c8=#c5,1,-1 do if c6-c5[c8].t>c0 then table.remove(c5,c8)else c7=c7+c5[c8].passo end end;return c7 end;local function c9(c5,c6,ca,cb)if not cb then return end;local cc=(cb-ca).Magnitude;if cc>0 then table.insert(c5,{t=c6,passo=cc})end end;local cd={root=nil,posicao=nil,ultimaAmostra=0,historico={}}local function ce(cf,c6)local cg=cd;if cg.root~=cf or c6-cg.ultimaAmostra>c0 then cg.root=cf;cg.posicao=cf.Position;cg.ultimaAmostra=c6;table.clear(cg.historico)return 0 end;c9(cg.historico,c6,cg.posicao,cf.Position)cg.posicao=cf.Position;cg.ultimaAmostra=c6;return c4(cg.historico,c6)end;local function ch(cf,ci)local bX=b3()if cf.Anchored or not bX or bX.Health<=0 or ci>=c2 then return true end;local cg=bX:GetState()return cf.AssemblyLinearVelocity.Magnitude<12 and(cg~=Enum.HumanoidStateType.Freefall and cg~=Enum.HumanoidStateType.Jumping)end;local function cj(cf,ci,ck,cl)local cm=math.clamp(ci or 0.016666,0.004166,c0)local cn=ce(cf,os.clock())local co=not cl or ch(cf,cm)local cp=cl and(co and cn>h)local cq=cl and(co and h or b4)or h;if cp then cq=b4 end;local cr=math.max(0,cq-cn)local cs=math.min(math.max(ck or 0,0),cr/cm)local ct=math.max(0,cr-cs*cm)if cp then ct=0 end;return cm,cs,ct,cn,co end;a_.handleQ=cj;local cu,cv,c8,cc=4,8,105,65;local cw,bx,cx=0.05,0.6,14;local cy,cz,cA=20,14,0.55;local cB=Vector3.zero;local cC,cD,cE,cF=0,0,4,0;local function cG(ci)if not aZ.spoofWalkEnabled then cF=0;return end;if aZ.flyEnabled or aZ.autoFarmPescaEnabled or aZ.farmPartesEnabled then cF=0;return end;local cf=b5()if not cf then return end;local bX=b3()if not bX then return end;if bX.Sit or b_[bX:GetState()]then cF=0;return end;if bW.Magnitude<=0 then cF=0;if os.clock()<cC and cB.Magnitude>0 then local cH=math.max(bX.WalkSpeed,1)local cI=math.clamp(cz/cH,0,1)pcall(bX.Move,bX,cB*cI,false)end;return end;cB=bW.Unit;cC=os.clock()+cA;local cs=cf.AssemblyLinearVelocity;local cJ=Vector3.new(cs.X,0,cs.Z).Magnitude;if(ci or 0)>=cw or cf.Anchored or cJ<12 then cD=os.clock()+bx end;local cK=bZ()local cL=math.min(aZ.spoofWalkSpeed,cK and aZ.spoofWalkSpeed or(os.clock()<cD and cc or c8))local cM=cL-bY;if cM<=0 then cF=0;return end;local cN=0.9+math.random()*0.1;local cO=cM*ci*cN+cF;local cm=math.min(cO,cM*ci,cK and cv or cu)cF=math.clamp(cO-cm,0,cE)local cP=bW.Unit;cf.CFrame=cf.CFrame+cP*cm;local C=cf.AssemblyLinearVelocity;if Vector3.new(C.X,0,C.Z).Magnitude<cx then cf.AssemblyLinearVelocity=Vector3.new(cP.X*cy,C.Y,cP.Z*cy)end end;a_.Fz=cG;do local cQ,H;local function cR()if cQ and H then pcall(function()cQ.UseJumpPower=H.UseJumpPower;cQ.JumpPower=H.JumpPower;cQ.JumpHeight=H.JumpHeight;cQ:SetStateEnabled(Enum.HumanoidStateType.Jumping,H.Jumping)end)end;cQ,H=nil,nil end;function a_.updateJumpPower(bX)if cQ~=bX then cR()end;if not aZ.spoofJumpEnabled or a_.destroyed or not bX then cR()return end;if not H then cQ=bX;H={UseJumpPower=bX.UseJumpPower,JumpPower=bX.JumpPower,JumpHeight=bX.JumpHeight,Jumping=bX:GetStateEnabled(Enum.HumanoidStateType.Jumping)}end;local cS=math.clamp(tonumber(aZ.spoofJumpPower)or 90,0,1000)if not bX.UseJumpPower then bX.UseJumpPower=true end;if bX.JumpPower~=cS then bX.JumpPower=cS end;if not aZ.flyEnabled and not aZ.ghostEnabled and not bX.Sit then bX:SetStateEnabled(Enum.HumanoidStateType.Jumping,true)end end;function a_.setJumpPower(C)aZ.spoofJumpEnabled=C==true;a_.updateJumpPower(b3())end;a_.restoreJumpPower=cR;a_.uz=function()a_.updateJumpPower(b3())end;b0(l.JumpRequest:Connect(function()if aZ.spoofJumpEnabled and not a_.destroyed then pcall(a_.uz)end end))end;local cT,cU,cV;do local cW={}local cX=setmetatable({},{__mode=("k")})local cY;local function cR()for cZ,c_ in pairs(cX)do if cZ.Parent then pcall(function()cZ.CanCollide=c_ end)end end;table.clear(cX)end;local function d0()return aZ.noclipEnabled or aZ.noclipCarEnabled or aZ.vFlyEnabled or next(cW)~=nil end;local function cm(d1)local d2=aW.Character;if cY~=d2 then cR()cY=d2 end;if a_.destroyed or not d2 or d1~=true and not d0()then cR()return end;for aO,cZ in ipairs(d2:GetDescendants())do if cZ:IsA(("BasePart"))then if cX[cZ]==nil then cX[cZ]=cZ.CanCollide end;if cZ.CanCollide then cZ.CanCollide=false end end end end;a_.noclip={acquire=function(d3)cW[d3]=true;cm()end,release=function(d3)cW[d3]=nil;cm()end,step=function()cm()end,restore=function()table.clear(cW)cR()end}cT=function(d1)cm(d1)end;cU=function()cm()end;cV=function()end;a_.sz,a_.Nz,a_.ez=cT,cU,cV;b0(aW.CharacterAdded:Connect(function()cm()end))end;local d4,d5,d6=60,30,14;local d7=d4;local d8=Vector3.zero;local d9=false;local function da(ci)local cf=b5()local bX=b3()if not cf or not bX then return end;if not aZ.flyEnabled then bX:SetStateEnabled(Enum.HumanoidStateType.Swimming,true)bX:SetStateEnabled(Enum.HumanoidStateType.Jumping,true)if bX:GetState()==Enum.HumanoidStateType.Swimming then local bi=bX.FloorMaterial==Enum.Material.Air and Enum.HumanoidStateType.Freefall or Enum.HumanoidStateType.Running;pcall(bX.ChangeState,bX,bi)end;if aZ.autoFarmPescaEnabled or aZ.farmPartesEnabled then d9=false;return end;if bZ()then d9=false;cf.AssemblyLinearVelocity=Vector3.zero;return end;local aO,cs,ct,aO,co=cj(cf,ci,d6,true)if d9 and(co and d8.Magnitude>0)then cf.AssemblyLinearVelocity=d8*cs;return end;d9=false;cf.AssemblyLinearVelocity=Vector3.zero;return end;if bX.Health<=0 then return end;local db=math.clamp(tonumber(aZ.flySpeed)or 60,0,100)bX:SetStateEnabled(Enum.HumanoidStateType.Jumping,false)bX:ChangeState(Enum.HumanoidStateType.Swimming)local dc=0;if l:IsKeyDown(Enum.KeyCode.Space)then dc=1 elseif l:IsKeyDown(Enum.KeyCode.LeftControl)then dc=-1 end;local cP=bX.MoveDirection+Vector3.new(0,dc,0)if cP.Magnitude<=0 then if bZ()then cf.AssemblyLinearVelocity=Vector3.zero;return end;local aO,cs,aO,aO,co=cj(cf,ci,d6,true)if co and d8.Magnitude>0 then cf.AssemblyLinearVelocity=d8*cs else cf.AssemblyLinearVelocity=Vector3.zero end;return end;cP=cP.Unit;d8=cP;d9=true;if bZ()then cf.AssemblyLinearVelocity=cP*db;return end;local cq=bX.MoveDirection.Magnitude>0 and d4 or d7;local dd=math.min(db,cq)local cs=math.min(dd,d5)local aO,cm,aO,aO,co=cj(cf,ci,cs,true)local d0=math.min(dd,co and c1 or d4)local de=math.max(0,d0-cm)if de>0 then cf.CFrame=cf.CFrame+cP*de*(ci or 0.016)end;cf.AssemblyLinearVelocity=cP*cm end;a_.xz=da;do local df=10;local dg=3.5;local dh=("rbxassetid://507777826")local di=("rbxassetid://180426354")local dj=false;local dk=nil;local dl=nil;local dm=nil;local dn=nil;local dp=false;local dq={}local dr=0;local ds=nil;local dt=nil;local du=OverlapParams.new()du.FilterType=Enum.RaycastFilterType.Exclude;local function dv()if dp then return end;dp=true;table.clear(dq)dt=k.Stepped:Connect(function()if not dp then return end;local dw=aW.Character;if not dw then return end;local cf=dw:FindFirstChild(("HumanoidRootPart"))if not cf then return end;du.FilterDescendantsInstances={dw,dk,dl}local dx=workspace:GetPartBoundsInBox(cf.CFrame,Vector3.new(4,6,4),du)for aO,cZ in ipairs(dx)do if cZ:IsA(("BasePart"))and cZ.Parent and cZ~=dl and cZ.CanCollide then if dq[cZ]==nil then dq[cZ]=true end;cZ.CanCollide=false end end end)end;local function dy()dp=false;if dt then dt:Disconnect()dt=nil end;for cZ in pairs(dq)do if cZ and cZ.Parent and cZ~=dl then cZ.CanCollide=true end end;table.clear(dq)end;local function dz(dA)local dB=dA:FindFirstChildOfClass(("Humanoid"))if not dB then return false end;dB.AutoRotate=false;dB.PlatformStand=true;dB.DisplayDistanceType=Enum.HumanoidDisplayDistanceType.None;for aO,dC in ipairs({Enum.HumanoidStateType.FallingDown,Enum.HumanoidStateType.Ragdoll,Enum.HumanoidStateType.Jumping,Enum.HumanoidStateType.Climbing,Enum.HumanoidStateType.Swimming,Enum.HumanoidStateType.Freefall,Enum.HumanoidStateType.Flying})do pcall(function()dB:SetStateEnabled(dC,false)end)end;for aO,dD in ipairs(dA:GetDescendants())do if dD:IsA(("BasePart"))then dD.Anchored=true;dD.CanCollide=false;dD.CanTouch=false;dD.CanQuery=false;dD.Massless=true elseif dD:IsA(("Script"))or dD:IsA(("LocalScript"))then dD:Destroy()end end;local dE=dB:FindFirstChildOfClass(("Animator"))or Instance.new(("Animator"),dB)local dF=Instance.new(("Animation"))dF.Name=("VeteranoGhostWalk")dF.AnimationId=dB.RigType==Enum.HumanoidRigType.R15 and dh or di;local dG,dH=pcall(function()return dE:LoadAnimation(dF)end)if dG and dH then dm=dH;dm.Looped=true;dm.Priority=Enum.AnimationPriority.Movement end;return true end;local function dI(dJ)if not dm then return end;local dK=dJ.MoveDirection.Magnitude>0.05;if dK then if not dm.IsPlaying then dm:Play(0.12)end;dm:AdjustSpeed(math.clamp(dJ.WalkSpeed/16,0.5,2))else if dm.IsPlaying then dm:Stop(0.12)end end end;local function dL()if not dj or not dk or not aW.Character then return end;local dM=aW.Character;local dN=dM:FindFirstChild(("HumanoidRootPart"))if not dN or not dl then return end;local dO=dk:FindFirstChildOfClass(("Humanoid"))if dO and workspace.CurrentCamera.CameraSubject~=dO then workspace.CurrentCamera.CameraSubject=dO end;local dP=dN.Position;dN.AssemblyLinearVelocity=Vector3.new(dN.AssemblyLinearVelocity.X,0,dN.AssemblyLinearVelocity.Z)dl.CFrame=CFrame.new(dP.X,dr-dg,dP.Z)dk:PivotTo(CFrame.new(dP.X,dr+df,dP.Z)*dN.CFrame.Rotation)local dJ=dM:FindFirstChildOfClass(("Humanoid"))if dJ then dI(dJ)end end;local function dQ()if not dj then return end;dj=false;k:UnbindFromRenderStep(("VeteranoGhostCameraFix"))if dn then dn:Disconnect()dn=nil end;dy()if dm then pcall(function()dm:Stop(0.1)end)dm=nil end;local dM=aW.Character;local dN=dM and dM:FindFirstChild(("HumanoidRootPart"))local dJ=dM and dM:FindFirstChildOfClass(("Humanoid"))if dJ then dJ:SetStateEnabled(Enum.HumanoidStateType.Jumping,true)end;if dN and dk then local dR=dk:FindFirstChild(("HumanoidRootPart"))if dR then dN.CFrame=dR.CFrame end end;if dM then for aO,dD in ipairs(dM:GetDescendants())do if dD:IsA(("BasePart"))then dD.Transparency=0;dD.CanTouch=true;dD.CanQuery=true;dD.CanCollide=true end end;if dJ then workspace.CurrentCamera.CameraSubject=dJ end end;if dk then dk:Destroy()dk=nil end;if dl then dl:Destroy()dl=nil end end;local function dS()local dM=aW.Character;if not dM then return end;local dN=dM:FindFirstChild(("HumanoidRootPart"))local dJ=dM:FindFirstChildOfClass(("Humanoid"))if not dN or not dJ then return end;dj=true;dJ:SetStateEnabled(Enum.HumanoidStateType.Jumping,false)local dT=dN.CFrame;dr=dT.Y-df;dl=Instance.new(("Part"))dl.Name=("VeteranoGhostPlatform")dl.Size=Vector3.new(10,1,10)dl.Anchored=true;dl.CanCollide=true;dl.CanTouch=false;dl.CanQuery=false;dl.Transparency=1;dl.Parent=workspace;dM.Archivable=true;for aO,dU in ipairs(dM:GetDescendants())do dU.Archivable=true end;local dG,dV=pcall(function()return dM:Clone()end)if not dG or not dV then dQ()return end;dk=dV;dk.Name=("VeteranoGhostVisual")for aO,dD in ipairs(dk:GetDescendants())do if dD:IsA(("Script"))or dD:IsA(("LocalScript"))then dD:Destroy()end end;dk.Parent=workspace;local dR=dk:FindFirstChild(("HumanoidRootPart"))local dO=dk:FindFirstChildOfClass(("Humanoid"))if not dR or not dO then dQ()return end;dk.PrimaryPart=dR;if not dz(dk)then dQ()return end;dk:PivotTo(dT)for aO,dD in ipairs(dM:GetDescendants())do if dD:IsA(("BasePart"))then dD.Transparency=1 end end;dv()dN.CFrame=CFrame.new(dT.X,dr,dT.Z)*dT.Rotation;workspace.CurrentCamera.CameraSubject=dO;dn=workspace.CurrentCamera:GetPropertyChangedSignal(("CameraSubject")):Connect(function()if dj and dO and workspace.CurrentCamera.CameraSubject~=dO then workspace.CurrentCamera.CameraSubject=dO end end)k:BindToRenderStep(("VeteranoGhostCameraFix"),Enum.RenderPriority.Last.Value,dL)end;a_.startGhost=dS;a_.stopGhost=dQ;a_.isGhostActive=function()return dj end;b0(aW.CharacterAdded:Connect(function()if dj then dQ()end end))end;task.spawn(function()while not a_.destroyed do if aZ.monitorarStaff then local bd,ft=0,{}for aO,bz in ipairs(i:GetPlayers())do if bz~=aW and bp.Admin(bz)then bd=bd+1;table.insert(ft,bz.Name)end end;a_.staffCount=bd;a_.staffNames=ft end;task.wait(1)end end)local fu={medido=false,drawing=false,texto=false}function fu.set(dD,d_,fv)return pcall(function()dD[d_]=fv end)end;function fu.medir()if fu.medido then return fu end;if Drawing==nil or type(Drawing.new)~=("function")then return fu end;local u,fw=pcall(Drawing.new,("Square"))if not u then return fu end;fu.drawing=true;fu.filled=fu.set(fw,("Filled"),false)fu.thickness=fu.set(fw,("Thickness"),1)pcall(function()fw:Remove()end)local fx,fy=pcall(Drawing.new,("Text"))if fx then fu.texto=true;fu.center=fu.set(fy,("Center"),true)fu.outline=fu.set(fy,("Outline"),true)fu.outlineColor=fu.set(fy,("OutlineColor"),Color3.new())fu.font=fu.set(fy,("Font"),2)pcall(function()fy.Text=("MMM")end)local fz,fA=pcall(function()return fy.TextBounds end)fu.textBounds=fz and(typeof(fA)==("Vector2")and fA.X>0)pcall(function()fy:Remove()end)end;local fB,fC=pcall(Drawing.new,("Triangle"))fu.triangle=fB==true;if fB then pcall(function()fC:Remove()end)end;fu.medido=true;return fu end;function fu.ok()return fu.medir().drawing end;local function fD(f5)if not fu.ok()then return nil end;if f5==("Triangle")and not fu.triangle then return nil end;local u,dD=pcall(function()return Drawing.new(f5)end)if not u then return nil end;fu.set(dD,("Visible"),false)fu.set(dD,("Color"),Color3.fromRGB(170,70,255))fu.set(dD,("Transparency"),1)fu.set(dD,("Thickness"),1)return dD end;local function fE(fi)if not fu.ok()or not fu.texto then return nil end;local u,dD=pcall(function()return Drawing.new(("Text"))end)if not u then return nil end;fu.set(dD,("Visible"),false)fu.set(dD,("Color"),fi or Color3.fromRGB(170,70,255))fu.set(dD,("Transparency"),1)fu.set(dD,("Size"),13)if fu.center then fu.set(dD,("Center"),true)end;if fu.outline then fu.set(dD,("Outline"),true)end;if fu.outlineColor then fu.set(dD,("OutlineColor"),Color3.new(0,0,0))end;if fu.font then fu.set(dD,("Font"),2)end;return dD end;local function fF(dD)if not dD then return 0 end;if fu.textBounds then local u,fA=pcall(function()return dD.TextBounds end)if u and fA then return fA.X end end;local u,fy=pcall(function()return dD.Text end)if not u or type(fy)~=("string")then return 0 end;local fx,cT=pcall(function()return dD.Size end)return#fy*(fx and cT or 13)*0.52 end;local fG={{("Head"),("UpperTorso")},{("UpperTorso"),("LowerTorso")},{("UpperTorso"),("LeftUpperArm")},{("LeftUpperArm"),("LeftLowerArm")},{("LeftLowerArm"),("LeftHand")},{("UpperTorso"),("RightUpperArm")},{("RightUpperArm"),("RightLowerArm")},{("RightLowerArm"),("RightHand")},{("LowerTorso"),("LeftUpperLeg")},{("LeftUpperLeg"),("LeftLowerLeg")},{("LeftLowerLeg"),("LeftFoot")},{("LowerTorso"),("RightUpperLeg")},{("RightUpperLeg"),("RightLowerLeg")},{("RightLowerLeg"),("RightFoot")}}local fH={{("Head"),("Torso")},{("Torso"),("Left Arm")},{("Torso"),("Right Arm")},{("Torso"),("Left Leg")},{("Torso"),("Right Leg")}}local fI=#fG;local fJ={{1,2},{1,3},{1,5},{2,4},{2,6},{3,4},{3,7},{4,8},{5,6},{5,7},{6,8},{7,8}}local fK,fL,fM,fN=300,0.016666,0.033333,0.05;local fO,fP=4,5;local fQ=function(fR,c6,fS)if fR<=0 or c6-fR>fS then return c6+fS end;return fR+fS end;local function fT(bz)local fU={player=bz,box=fD(("Square")),name=fE(Color3.fromRGB(170,70,255)),distance=fE(Color3.fromRGB(190,200,225)),item=fE(Color3.fromRGB(190,200,225)),team=fE(Color3.fromRGB(170,70,255)),lines={},tracer=nil,arrow=nil,box3dLines={},highlight=nil,character=nil,humanoid=nil,root=nil,bodyParts={},skeletonPairs={},relationshipColor=nil,relationshipLabel=(""),nextVisualUpdate=0,nextSkeletonUpdate=0}if fU.box and fu.filled then fU.box.Filled=false end;for aO=1,fI do table.insert(fU.lines,fD(("Line")))end;aZ.bundles[bz]=fU;return fU end;local function fV(fU)if fU.box then fU.box.Visible=false end;if fU.name then fU.name.Visible=false end;if fU.distance then fU.distance.Visible=false end;if fU.item then fU.item.Visible=false end;if fU.team then fU.team.Visible=false end;if fU.tracer then fU.tracer.Visible=false end;if fU.arrow then fU.arrow.Visible=false end;for aO,c1 in ipairs(fU.lines)do c1.Visible=false end;for aO,c1 in ipairs(fU.box3dLines)do c1.Visible=false end end;local function fW(fU)fV(fU)if fU.highlight then fU.highlight.Enabled=false end end;local function fX(fU)if not fU then return end;local function fY(dD)if dD then pcall(function()dD:Remove()end)end end;fY(fU.box)fY(fU.name)fY(fU.distance)fY(fU.item)fY(fU.team)fY(fU.tracer)fY(fU.arrow)for aO,c1 in ipairs(fU.lines)do fY(c1)end;for aO,c1 in ipairs(fU.box3dLines)do fY(c1)end;if fU.highlight then pcall(function()fU.highlight:Destroy()end)fU.highlight=nil end end;a_.qF=fX;local function fZ()for aO,fU in pairs(aZ.bundles)do fW(fU)end end;a_.PF=fZ;local function f_(fc,g0)local O,g1=fc:WorldToViewportPoint(g0)return Vector2.new(O.X,O.Y),g1,O.Z end;local function g2(fU)if fU.tracer then return fU.tracer end;fU.tracer=fD(("Line"))if fU.tracer then if fu.thickness then fU.tracer.Thickness=1.5 end;fU.tracer.Color=fU.relationshipColor or Color3.fromRGB(170,70,255)end;return fU.tracer end;local function g3(fU)if fU.arrow then return fU.arrow end;fU.arrow=fD(("Triangle"))if fU.arrow then if fu.filled then fU.arrow.Filled=true end;if fu.thickness then fU.arrow.Thickness=1 end;fU.arrow.Color=fU.relationshipColor or Color3.fromRGB(170,70,255)end;return fU.arrow end;local function g4(fU)if#fU.box3dLines>0 then return fU.box3dLines end;for aO=1,#fJ do local c1=fD(("Line"))if c1 then if fu.thickness then c1.Thickness=1 end;c1.Color=fU.relationshipColor or Color3.fromRGB(170,70,255)table.insert(fU.box3dLines,c1)end end;return fU.box3dLines end;local function g5(fU,dw)local g6=fU.highlight;if not g6 or not g6.Parent then local u,g7=pcall(function()local fY=Instance.new(("Highlight"))fY.Name=("VeteranoESP_")..tostring(fU.player.UserId)fY.DepthMode=Enum.HighlightDepthMode.AlwaysOnTop;fY.FillTransparency=0.78;fY.OutlineTransparency=0;fY.Parent=workspace.CurrentCamera or workspace;return fY end)if not u then return nil end;g6=g7;fU.highlight=g6 elseif g6.Parent~=(workspace.CurrentCamera or workspace)then g6.Parent=workspace.CurrentCamera or workspace end;local fi=fU.relationshipColor or Color3.fromRGB(170,70,255)g6.Adornee=dw;g6.FillColor=fi;g6.OutlineColor=fi;return g6 end;local function g8(fU,fc,g9,ga)local gb=g3(fU)if not gb then return end;local fe=fc.ViewportSize;local gc=Vector2.new(fe.X*0.5,fe.Y*0.5)local cP=g9-gc;if ga<=0 then cP=-cP end;if cP.Magnitude<0.001 then cP=Vector2.new(0,-1)end;local gd=cP.Unit;local ge=math.max(40,math.min(fe.X,fe.Y)*0.42)local gf=gc+gd*ge;local gg=gf-gd*14;local gh=Vector2.new(-gd.Y,gd.X)*8;gb.PointA=gf;gb.PointB=gg+gh;gb.PointC=gg-gh;gb.Visible=true end;local function gi(fU,dw,bX,cf)if fU.character==dw and fU.humanoid==bX and fU.root==cf then return end;fU.character,fU.humanoid,fU.root=dw,bX,cf;table.clear(fU.bodyParts)table.clear(fU.skeletonPairs)for aO,ej in ipairs(dw:GetChildren())do if ej:IsA(("BasePart"))then table.insert(fU.bodyParts,ej)end end;local gj=bX.RigType==Enum.HumanoidRigType.R15 and fG or fH;for aO,gk in ipairs(gj)do table.insert(fU.skeletonPairs,{dw:FindFirstChild(gk[1]),dw:FindFirstChild(gk[2])})end end;local function gl(bz)if a_.npcSet and a_.npcSet[bz]then return nil end;local bx=bz.Team;local bV=bx and bx.Name or nil;if bp.Admin(bz)and bV~=("STAFF")then return bV and("STAFF | ")..bV or("STAFF")end;return bV end;local function gm(bz)local bx=bz.Team;local u,fi=pcall(function()return bx.TeamColor.Color end)return u and fi or Color3.fromRGB(170,70,255)end;local function gn(bz,fU)local fi,go=bp.Appearance(bz);local sl=a_.silent;if sl and sl.lock and sl.tPlayer==bz then fi=Color3.fromRGB(0,255,0)end;if a_.npcSet and a_.npcSet[bz]then go=(" [NPC]")end;fU.relationshipLabel=go;if fU.relationshipColor==fi then return end;fU.relationshipColor=fi;if fU.box then fU.box.Color=fi end;if fU.name then fU.name.Color=fi end;if fU.distance then fU.distance.Color=fi end;if fU.item then fU.item.Color=fi end;if fU.tracer then fU.tracer.Color=fi end;if fU.arrow then fU.arrow.Color=fi end;if fU.highlight then fU.highlight.FillColor=fi;fU.highlight.OutlineColor=fi end;for aO,c1 in ipairs(fU.lines)do if c1 then c1.Color=fi end end;for aO,c1 in ipairs(fU.box3dLines)do if c1 then c1.Color=fi end end end;local function gp(bz,fU,fc,gq,c6)if aZ.hideTeamEsp and aW.Team and bz.Team==aW.Team then fW(fU)fU.nextVisualUpdate=c6+fN;return end;local dw=bz.Character;local bX=dw and dw:FindFirstChildOfClass(("Humanoid"))local cf=dw and dw:FindFirstChild(("HumanoidRootPart"))if not dw or not bX or bX.Health<=0 or not cf then fU.character=nil;fU.nextVisualUpdate=c6+fN;fW(fU)return end;gi(fU,dw,bX,cf)local gr=(cf.Position-gq).Magnitude;if gr>aZ.maxDistance then fU.nextVisualUpdate=c6+fN;fW(fU)return end;gn(bz,fU)if aZ.highlight then local g6=g5(fU,dw)if g6 then g6.Enabled=true end elseif fU.highlight then fU.highlight.Enabled=false end;local g9,g1,ga=f_(fc,cf.Position)if not g1 or ga<=0 then fU.nextVisualUpdate=c6+fN;fV(fU)if aZ.arrow then g8(fU,fc,g9,ga)end;return end;local gs=gr<=fK;local fS=gs and fL or fM;fU.nextVisualUpdate=fQ(fU.nextVisualUpdate,c6,fS)if fU.arrow then fU.arrow.Visible=false end;local gt,gu,gv,gw=math.huge,math.huge,-math.huge,-math.huge;local gx=false;local gy,gz={},{}if aZ.box or aZ.name or aZ.distance or aZ.box3d or aZ.teamTag then local gA,gB;for aO,ej in ipairs(fU.bodyParts)do if ej.Parent==dw then local gC=ej.Size*0.5;local cv,gD=ej.Position-gC,ej.Position+gC;if gA then gA=Vector3.new(math.min(gA.X,cv.X),math.min(gA.Y,cv.Y),math.min(gA.Z,cv.Z))gB=Vector3.new(math.max(gB.X,gD.X),math.max(gB.Y,gD.Y),math.max(gB.Z,gD.Z))else gA,gB=cv,gD end end end;if gA then local gE=0;for gF=0,1 do for gG=0,1 do for gH=0,1 do gE=gE+1;local gI=Vector3.new(gF==0 and gA.X or gB.X,gG==0 and gA.Y or gB.Y,gH==0 and gA.Z or gB.Z)local gJ,gK,gL=f_(fc,gI)gy[gE]=gJ;gz[gE]=gL;if gL>0.5 then gx=true;gt=math.min(gt,gJ.X)gu=math.min(gu,gJ.Y)gv=math.max(gv,gJ.X)gw=math.max(gw,gJ.Y)end end end end end;if gx then local fe=fc.ViewportSize;gt=math.clamp(gt,-32,fe.X+32)gv=math.clamp(gv,-32,fe.X+32)gu=math.clamp(gu,-32,fe.Y+32)gw=math.clamp(gw,-32,fe.Y+32)if gv-gt<1 or gw-gu<1 then gx=false end end end;if aZ.box and fU.box then if gx then fU.box.Position=Vector2.new(gt,gu)fU.box.Size=Vector2.new(gv-gt,gw-gu)fU.box.Visible=true else fU.box.Visible=false end elseif fU.box then fU.box.Visible=false end;if aZ.name and fU.name then if gx then fU.name.Text=bz.Name..fU.relationshipLabel;fU.name.Position=Vector2.new((gt+gv)/2,gu-18)fU.name.Visible=true else fU.name.Visible=false end elseif fU.name then fU.name.Visible=false end;if aZ.teamTag and fU.team then local gM=gx and gl(bz)or nil;if gM then fU.team.Text=gM;if bp.Admin(bz)and bz.Team and bz.Team.Name==("STAFF")then fU.team.Color=Color3.fromRGB(255,200,50)else fU.team.Color=gm(bz)end;fU.team.Position=Vector2.new((gt+gv)/2,aZ.name and(fU.name and fU.name.Visible)and gu-32 or gu-18)fU.team.Visible=true else fU.team.Visible=false end elseif fU.team then fU.team.Visible=false end;if aZ.distance and fU.distance then if gx then fU.distance.Text=string.format(("%dm"),math.floor(gr))if fu.center then fU.distance.Center=true end;fU.distance.Position=Vector2.new((gt+gv)/2,gw+3)fU.distance.Visible=true else fU.distance.Visible=false end elseif fU.distance then fU.distance.Visible=false end;if aZ.heldItem and fU.item then local gN=fU.character or bz.Character;local gO=gx and(gN and gN:FindFirstChildOfClass(("Tool")))if gO then fU.item.Text=gO.Name;local gP=(gt+gv)/2;if aZ.distance and(fU.distance and fU.distance.Visible)then local gQ=fF(fU.distance)local gR=fF(fU.item)local gS=gP-(gQ+fP+gR)/2;if fu.center then fU.distance.Center=false end;fU.distance.Position=Vector2.new(gS,gw+3)if fu.center then fU.item.Center=false end;fU.item.Position=Vector2.new(gS+gQ+fP,gw+3)else if fu.center then fU.item.Center=true end;fU.item.Position=Vector2.new(gP,gw+3)end;fU.item.Visible=true else fU.item.Visible=false end elseif fU.item then fU.item.Visible=false end;if aZ.tracer then local fC=g2(fU)if fC then local fe=fc.ViewportSize;fC.From=Vector2.new(fe.X*0.5,4)fC.To=gx and Vector2.new((gt+gv)*0.5,(gu+gw)*0.5)or g9;fC.Visible=true end elseif fU.tracer then fU.tracer.Visible=false end;if aZ.box3d then local gT=g4(fU)for c8,gk in ipairs(fJ)do local c1=gT[c8]local gU,gV=gy[gk[1]],gy[gk[2]]local gW,gX=gz[gk[1]],gz[gk[2]]if c1 and gU and gV and gW and gX and gW>0.5 and gX>0.5 then c1.From=gU;c1.To=gV;c1.Visible=true elseif c1 then c1.Visible=false end end else for aO,c1 in ipairs(fU.box3dLines)do c1.Visible=false end end;if not aZ.skeleton then for aO,c1 in ipairs(fU.lines)do c1.Visible=false end elseif c6>=fU.nextSkeletonUpdate then local fS=gs and fL or fM;fU.nextSkeletonUpdate=fQ(fU.nextSkeletonUpdate,c6,fS)for c8,c1 in ipairs(fU.lines)do local gk=fU.skeletonPairs[c8]if gk and c1 then local gU,gV=gk[1],gk[2]if gU and gV and gU.Parent==dw and gV.Parent==dw then local gY,gZ,gW=f_(fc,gU.Position)local g_,h0,gX=f_(fc,gV.Position)if gZ and h0 and gW>0.5 and gX>0.5 then c1.From=gY;c1.To=g_;c1.Visible=true else c1.Visible=false end else c1.Visible=false end elseif c1 then c1.Visible=false end end end end;b0(i.PlayerRemoving:Connect(function(bz)local fU=aZ.bundles[bz]if fU then fX(fU)aZ.bundles[bz]=nil end end))local h1=false;b0(k.RenderStepped:Connect(function()if not aZ.espEnabled then if h1 then fZ()end;h1=false;return end;h1=true;local fc=workspace.CurrentCamera;if not fc then fZ()return end;local dw=aW.Character;local cf=dw and dw:FindFirstChild(("HumanoidRootPart"))local gq=cf and cf.Position or fc.CFrame.Position;local bA=i:GetPlayers()if aZ.npcEsp and a_.npcList then for aO,np in ipairs(a_.npcList(gq))do bA[#bA+1]=np end end;local c6=os.clock()local h2=fO;for aO,bz in ipairs(bA)do if bz~=aW then local fU=aZ.bundles[bz]if not fU and h2>0 then local u,v=pcall(fT,bz)if u then fU=v end;h2=h2-1 end;if fU and c6>=fU.nextVisualUpdate then pcall(gp,bz,fU,fc,gq,c6)end end end end))local h3={Cabeca={("Head")},Tronco={("Torso"),("UpperTorso"),("LowerTorso"),("HumanoidRootPart")}}local function h4(dw)local bA=h3[aZ.aimbotBodyPart]or h3.Cabeca;for aO,h5 in ipairs(bA)do local ej=dw:FindFirstChild(h5)if ej and ej:IsA(("BasePart"))then return ej end end;return dw:FindFirstChild(("Head"))end;local function h6(fc,bi,dw)local ca=fc.CFrame.Position;local eq=RaycastParams.new()eq.FilterType=Enum.RaycastFilterType.Exclude;eq.FilterDescendantsInstances={aW.Character,dw,fc}local ee=workspace:Raycast(ca,bi.Position-ca,eq)return ee==nil end;local function h7(fc,h8,h9)local gq=fc.CFrame.Position;local gc=fc.ViewportSize/2;local ha,hb=nil,math.huge;for aO,bz in ipairs(a_.targetList and a_.targetList()or i:GetPlayers())do if bz~=aW and((a_.npcSet and a_.npcSet[bz])or not bp.Protected(bz))and not(aZ.aimbotTeamCheck and aW.Team and bz.Team==aW.Team)then local dw=bz.Character;local cZ=dw and h4(dw)local bX=dw and dw:FindFirstChildOfClass(("Humanoid"))if cZ and bX and bX.Health>0 and(cZ.Position-gq).Magnitude<=h9 then local gJ,g1=fc:WorldToViewportPoint(cZ.Position)if g1 and gJ.Z>0 then local cc=(Vector2.new(gJ.X,gJ.Y)-gc).Magnitude;if cc<=h8 then local kk=cc;local pr=aZ.aimbotPriority;if pr==("Closest")then kk=(cZ.Position-gq).Magnitude elseif pr==("Farthest")then kk=-(cZ.Position-gq).Magnitude elseif pr==("Lowest Health")then kk=bX.Health elseif pr==("Highest Health")then kk=-bX.Health end;if kk<hb then if not aZ.aimbotWallCheck or h6(fc,cZ,dw)then ha,hb=cZ,kk end end end end end end end;return ha end;local hc=nil;local function hd()if hc then return end;hc=k.RenderStepped:Connect(function()if not aZ.aimbotEnabled then return end;local fc=workspace.CurrentCamera;if not fc then return end;local dw=aW.Character;local bX=dw and dw:FindFirstChildOfClass(("Humanoid"))if not bX or bX.Health<=0 then return end;if aZ.aimbotMode==("Legit")then local gO=dw:FindFirstChildOfClass(("Tool"))if not gO then return end end;if aZ.aimbotHoldRMB and not game:GetService(("UserInputService")):IsMouseButtonPressed(Enum.UserInputType.MouseButton2)then return end;local bi=h7(fc,aZ.aimbotFov,aZ.aimbotDistance)if not bi then return end;local gq=fc.CFrame.Position;local he=bi.Position;if(aZ.aimbotPredict or 0)>0 then local okv,vel=pcall(function()return bi.AssemblyLinearVelocity end)if okv and typeof(vel)==("Vector3")then he=he+vel*aZ.aimbotPredict end end;if aZ.aimbotMode==("Rage")then fc.CFrame=CFrame.new(gq,he)else local hf=fc.CFrame.LookVector;local hg=(he-gq).Unit;local hh=math.clamp(aZ.aimbotSmoothness,0.01,1)local hi=math.clamp(hh*8,0.02,0.35)local hj=hf:Dot(hg)if hj>0.998 then hi=0.6 end;local hk=hf:Lerp(hg,hi)fc.CFrame=CFrame.new(gq,gq+hk)end end)end;local function hl()if hc then hc:Disconnect()hc=nil end;if a_.aimbotCir then pcall(function()a_.aimbotCir:Remove()end)a_.aimbotCir=nil end end;a_.aimbotLoop=hd;a_.stopAimbot=hl;do b0(k.RenderStepped:Connect(function()local on=aZ.aimbotEnabled and aZ.aimbotShowFov and not a_.destroyed;if not on then local c0=a_.aimbotCir;if c0 then pcall(function()c0.Visible=false end)end return end;if not a_.aimbotCir then local okc,c=pcall(function()return Drawing.new(("Circle"))end)if not okc or not c then aZ.aimbotShowFov=false return end;a_.aimbotCir=c;pcall(function()c.NumSides=64;c.Thickness=1;c.Filled=false;c.Transparency=1;c.Color=Color3.fromRGB(255,255,255)end)end;local cam=workspace.CurrentCamera;if cam then pcall(function()local c1=a_.aimbotCir;c1.Position=cam.ViewportSize/2;c1.Radius=aZ.aimbotFov or 120;c1.Visible=true end)end end))end;local i5,i6,i7,i8,i9,ia=20,14,1.5,c3,18,65;local ib={ninja=true,ak47=true,fal=true,fuzil=true,glock=true,oit_o=true,oit_o_=true,submetralhadora=true,usps=true,uzi=true,barret=true,fuzilhollow=true,fuzilphantom=true,fuziltrovao=true,fuziltrovao_=true,g3=true,ptdragon=true,ptneon=true,ptnk=true,armapdsecreta=true,fuzilninja=true,fuzilpascoa=true,natalina=true,ptninja=true,ptpascoa=true}local function ic(id)if not id then return("")end;local h5=tostring(id)h5=h5:gsub(("[áàãâä]"),("a")):gsub(("[éèêë]"),("e")):gsub(("[íìîï]"),("i"))h5=h5:gsub(("[óòõôö]"),("o")):gsub(("[úùûü]"),("u")):gsub(("ç"),("c"))return h5:lower():gsub(("[^%w]"),(""))end;local function ie(id)local R=ic(id)if R==("")then return false end;if ib[R]then return true end;for ig in pairs(ib)do if#ig>=4 and R:find(ig,1,true)or#ig<=3 and R:match(("^")..ig..("%d*$"))then return true end end;return false end;a_.ehArmaPermitida=ie;local ih=Vector3.new(-821.86,129.42,-4681.15)local ii;do local cX=setmetatable({},{__mode=("k")})local kQ,kR,dY=0,false,0;local kS=setmetatable({},{__mode=("k")})local kT={Brightness=2,ClockTime=14,GlobalShadows=false,Ambient=Color3.fromRGB(255,255,255),OutdoorAmbient=Color3.fromRGB(255,255,255),FogStart=0,FogEnd=1000000,ExposureCompensation=0}local function kU(dD)local kV={}if dD==n then if aZ.fullbright then for d_,is in pairs(kT)do kV[d_]=is end elseif aZ.noLag then kV.GlobalShadows=false end elseif dD:IsA(("Atmosphere"))and aZ.fullbright then kV.Density,kV.Haze,kV.Glare=0,0,0 elseif dD:IsA(("PostEffect"))then if aZ.fullbright or aZ.noLag then kV.Enabled=false end elseif aZ.noLag then if dD:IsA(("Terrain"))then kV.WaterWaveSize,kV.WaterWaveSpeed=0,0;kV.WaterReflectance,kV.Decoration=0,false elseif dD:IsA(("BasePart"))then kV.CastShadow,kV.Reflectance=false,0;kV.Material=Enum.Material.SmoothPlastic elseif dD:IsA(("ParticleEmitter"))or dD:IsA(("Trail"))or dD:IsA(("Beam"))or dD:IsA(("Smoke"))or dD:IsA(("Fire"))or dD:IsA(("Sparkles"))then kV.Enabled=false end end;return kV end;local function kW(dD)if not dD.Parent and dD~=n then return end;local kV=kU(dD)if dD:IsA(("PostEffect"))or dD:IsA(("Atmosphere"))then kS[dD]=true end;local H=cX[dD]local kX=kR;kR=true;if H then for d_,e1 in pairs(H)do if kV[d_]==nil then pcall(function()dD[d_]=e1.original end)H[d_]=nil end end end;for d_,is in pairs(kV)do local u,d2=pcall(function()return dD[d_]end)if u then H=H or{}if not H[d_]then H[d_]={original=d2}end;H[d_].applied=is;if d2~=is then pcall(function()dD[d_]=is end)end end end;kR=kX;cX[dD]=H and next(H)and H or nil end;local function jH()kQ=kQ+1;local ji=kQ;kW(n)local kY,hY={},{}local function ix(dD)if not hY[dD]then hY[dD]=true;kY[#kY+1]=dD end end;for dD in pairs(cX)do ix(dD)end;if aZ.fullbright or aZ.noLag then for aO,dD in ipairs(n:GetDescendants())do ix(dD)end;local fc=workspace.CurrentCamera;if fc then for aO,dD in ipairs(fc:GetDescendants())do ix(dD)end end end;if aZ.noLag then for aO,dD in ipairs(workspace:GetDescendants())do ix(dD)end end;task.spawn(function()for kZ,dD in ipairs(kY)do if a_.destroyed or kQ~=ji then return end;pcall(kW,dD)if kZ%150==0 then task.wait()end end end)end;function a_.setFullbright(C)aZ.fullbright=C==true;jH()end;function a_.setNoLag(C)aZ.noLag=C==true;jH()end;function a_.restoreGraphics()kQ=kQ+1;aZ.fullbright,aZ.noLag=false,false;local kY={}for dD in pairs(cX)do kY[#kY+1]=dD end;for aO,dD in ipairs(kY)do pcall(kW,dD)end end;b0(n.Changed:Connect(function(d_)if kR or a_.destroyed or not(aZ.fullbright or aZ.noLag)then return end;local H=cX[n]if H and H[d_]then local u,is=pcall(function()return n[d_]end)if u and is~=H[d_].applied then H[d_].original=is end end;pcall(kW,n)end))local function bU(dD)if not a_.destroyed and(aZ.fullbright or aZ.noLag)then task.defer(function()if not a_.destroyed then pcall(kW,dD)end end)end end;b0(workspace.DescendantAdded:Connect(bU))b0(n.DescendantAdded:Connect(bU))b0(k.Heartbeat:Connect(function(ci)if a_.destroyed or not(aZ.fullbright or aZ.noLag)then return end;dY=dY+ci;if dY<0.25 then return end;dY=0;pcall(kW,n)for dD in pairs(kS)do if dD.Parent then pcall(kW,dD)end end end))end;local function k_(ci)if a_.destroyed then return end;local bX=b3()if bX then if aZ.spoofWalkEnabled then local cH=math.min(aZ.spoofWalkSpeed,28)if bX.WalkSpeed~=cH then bX.WalkSpeed=cH end end end;pcall(a_.updateJumpPower,bX)pcall(cG,ci)if aZ.noclipEnabled then pcall(cU)if not aZ.flyEnabled then pcall(cV)end end;if aZ.flyEnabled then pcall(a_.camFly,ci)else if a_.camFlyActive then pcall(a_.camFlyStop)end;if aZ.flyEnabled or d9 then pcall(da,ci)end end end;b0(k.Heartbeat:Connect(k_))b0(k.Stepped:Connect(function()if not a_.destroyed then pcall(a_.noclip.step)end end))a_.camFlyActive=false
-a_.camFly,a_.camFlyStop=(function()
-local bv,bg,vel=nil,nil,Vector3.zero
-local function clean()
-if bv then pcall(function()bv:Destroy()end)bv=nil end
-if bg then pcall(function()bg:Destroy()end)bg=nil end
-vel=Vector3.zero
-end
-local function stop()
-clean()
-if a_.camFlyActive then
-a_.camFlyActive=false
-local h=b3()
-if h then pcall(function()h.PlatformStand=false;h:ChangeState(Enum.HumanoidStateType.GettingUp)end)end
-local r=b5()
-if r then pcall(function()r.AssemblyLinearVelocity=Vector3.zero end)end
-end
-end
-local function key(c)return l:IsKeyDown(c)and 1 or 0 end
-local function fly(dt)
-local root,hum=b5(),b3()
-local cam=workspace.CurrentCamera
-if not root or not hum or hum.Health<=0 or not cam then return end
-dt=math.min(dt or 0.016,0.1)
-if hum.Sit then hum.Sit=false end
-a_.camFlyActive=true
-hum.PlatformStand=true
-local speed=math.clamp(tonumber(aZ.flySpeed)or 60,0,300)
-local typing=l:GetFocusedTextBox()~=nil
-local f,r,v=0,0,0
-if not typing then
-f=key(Enum.KeyCode.W)-key(Enum.KeyCode.S)
-r=key(Enum.KeyCode.D)-key(Enum.KeyCode.A)
-v=(key(Enum.KeyCode.Space)+key(Enum.KeyCode.E))-(key(Enum.KeyCode.LeftControl)+key(Enum.KeyCode.Q))
-end
-if f==0 and r==0 and hum.MoveDirection.Magnitude>0 then
-local lv=cam.CFrame:VectorToObjectSpace(hum.MoveDirection)
-r,f=lv.X,-lv.Z
-end
-local dir=cam.CFrame.LookVector*f+cam.CFrame.RightVector*r+Vector3.new(0,v,0)
-local target=dir.Magnitude>0 and dir.Unit*speed or Vector3.zero
-if not bv or bv.Parent~=root then
-clean()
-bv=Instance.new("BodyVelocity")
-bv.MaxForce=Vector3.new(1e9,1e9,1e9)
-bv.Velocity=Vector3.zero
-bv.Parent=root
-bg=Instance.new("BodyGyro")
-bg.MaxTorque=Vector3.new(1e9,1e9,1e9)
-bg.P=9e4
-bg.D=1e3
-bg.Parent=root
-end
-bg.CFrame=cam.CFrame
-vel=vel:Lerp(target,math.clamp(dt*12,0,1))
-bv.Velocity=vel
-end
-return fly,stop
-end)()
-local f0=aR:CreateWindow({Name=("Vortex Hub"),Subtitle=("Universal Script"),Icon=("crown"),Logo=true,Size=UDim2.fromOffset(420,300),MinSize=Vector2.new(420,300),ToggleKey=Enum.KeyCode.K})do local lQ=f0.SetVisible;local lR=true;function f0:SetVisible(dC)if dC~=false then local cf=self.root;if lR then cf.Size=UDim2.fromOffset(420,300)lR=false end;cf.AnchorPoint=Vector2.new(0.5,0.5)local lS=workspace.CurrentCamera;if lS then local lT=lS.ViewportSize;local u,lU=pcall(function()return o:GetGuiInset()end)if u and typeof(lU)==("Vector2")then lT=lT+lU end;cf.Position=UDim2.fromOffset(math.round(lT.X*0.5),math.round(lT.Y*0.5))end end;return lQ(self,dC)end;f0:SetVisible(false)end;pcall(function()f0:SetBackdrop(("aurora"))end)pcall(function()local lV=f0.root:FindFirstChildOfClass(("UICorner"))if lV then lV.CornerRadius=UDim.new(0,10)end;local lW=f0.root:FindFirstChildOfClass(("UIStroke"))if lW then lW.Color=aS.Accent;lW.Thickness=1.5 end end)local lX=f0:CreateTab({Name=("PLAYER"),Icon=("user")})lX:SetColumns(2)local lY=lX:CreateSection({Name=("Movement")})lY:Toggle({Name=("Custom Speed"),Default=false,Callback=function(C)aZ.spoofWalkEnabled=C end})lY:Slider({Name=("Walk Speed"),Min=16,Max=250,Default=40,Callback=function(C)aZ.spoofWalkSpeed=C end})lY:Toggle({Name=("Custom Jump"),Default=false,Callback=function(C)a_.setJumpPower(C)end})lY:Slider({Name=("Jump Power"),Min=50,Max=150,Default=90,Callback=function(C)aZ.spoofJumpPower=C;a_.updateJumpPower(b3())end})local lZ=lX:CreateSection({Name=("Flight")})lZ:Toggle({Name=("Fly"),Default=false,Callback=function(C)aZ.flyEnabled=C end})lZ:Slider({Name=("Fly Speed"),Min=16,Max=300,Default=60,Callback=function(C)aZ.flySpeed=math.clamp(C,16,300)end})local lZ2=lX:CreateSection({Name=("Collision")})lZ2:Toggle({Name=("Noclip"),Default=false,Callback=function(C)aZ.noclipEnabled=C;pcall(cU)end})lZ2:Toggle({Name=("Ghost Mode"),Default=false,Callback=function(C)aZ.ghostEnabled=C;if C then pcall(a_.startGhost)else pcall(a_.stopGhost)end end})local l_=lX:CreateSection({Name=("World")})l_:Toggle({Name=("Fullbright"),Default=false,Callback=function(C)a_.setFullbright(C)end})l_:Toggle({Name=("No Lag"),Default=false,Callback=function(C)a_.setNoLag(C)end});(function()
-    local Players, Workspace = i, workspace
-    local running, runId = false, 0
-    local list, byHum, conns = {}, {}, {}
-    a_.npcSet = a_.npcSet or {}
+-- ============================================================
+-- VantaX_fix.lua | loader de compatibilidade (PC / Android / iOS)
+-- Baixa o VantaX do repo, aplica as correcoes em memoria e executa.
+-- O arquivo original NAO e alterado. Logs no console (F9): [VantaX-fix]
+-- ============================================================
 
-    local function dropBundle(proxy)
-        local b = aZ.bundles[proxy]
-        if b then
-            if a_.qF then pcall(a_.qF, b) end
-            aZ.bundles[proxy] = nil
+local SRC_URL           = "https://raw.githubusercontent.com/jhamesuser-byte/Xyz-hub/refs/heads/main/VantaX"
+local SHOW_MENU_ON_LOAD = true -- o original inicia com o menu escondido (so abria com K / icone no mobile)
+
+local Players     = game:GetService("Players")
+local UIS         = game:GetService("UserInputService")
+local StarterGui  = game:GetService("StarterGui")
+local TextService = game:GetService("TextService")
+local env         = (getgenv and getgenv()) or _G
+
+local function log(...) print("[VantaX-fix]", ...) end
+local function bad(...) warn("[VantaX-fix]", ...) end
+local function has(name) return typeof(env[name]) == "function" end
+
+-- ------------------------------------------------------------
+-- HTTP com fallback (alguns executores de PC nao tem game:HttpGet)
+-- ------------------------------------------------------------
+local function httpGet(url)
+    local ok, res = pcall(function() return game:HttpGet(url) end)
+    if ok and type(res) == "string" and #res > 0 then return res end
+    local req = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
+    if req then
+        local ok2, r = pcall(req, { Url = url, Method = "GET" })
+        if ok2 and type(r) == "table" and type(r.Body) == "string" and #r.Body > 0
+            and (r.Success == true or r.StatusCode == 200) then
+            return r.Body
         end
-        if a_.relationships then a_.relationships[proxy] = nil end
     end
+    error("HttpGet falhou: " .. tostring(res))
+end
 
-    local function isNpcHumanoid(hum)
-        local model = hum.Parent
-        if not model or not model:IsA("Model") then return false end
-        if Players:GetPlayerFromCharacter(model) then return false end
-        local myChar = aW.Character
-        if myChar and (model == myChar or model:IsDescendantOf(myChar)) then return false end
-        return true
+-- ------------------------------------------------------------
+-- Drawing fallback (Instances) - usado so se o executor nao tiver Drawing
+-- Cobre: Square, Line, Text, Circle, Triangle (contorno)
+-- ------------------------------------------------------------
+local function buildDrawingShim()
+    if env.__VX_DRAW_HOST then pcall(function() env.__VX_DRAW_HOST:Destroy() end) end
+
+    local host = Instance.new("ScreenGui")
+    host.Name = "VX_Draw"
+    host.ResetOnSpawn = false
+    host.IgnoreGuiInset = true -- coordenadas = viewport, igual ao WorldToViewportPoint usado no ESP
+    host.DisplayOrder = 2147483647
+    host.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    if syn and syn.protect_gui then pcall(syn.protect_gui, host) end
+
+    local function tryParent(getParent)
+        local ok = pcall(function() host.Parent = getParent() end)
+        return ok and host.Parent ~= nil
     end
+    local parented = (has("gethui") and tryParent(gethui))
+        or tryParent(function() return game:GetService("CoreGui") end)
+        or tryParent(function() return Players.LocalPlayer:WaitForChild("PlayerGui", 5) end)
+    if not parented then return nil end
+    env.__VX_DRAW_HOST = host
 
-    local TeamsSvc = game:GetService("Teams")
-    local TEAM_KEYS = { "Team", "TeamName", "Time", "Equipe", "TeamColor", "Faction", "Faccao" }
+    local WHITE = Color3.new(1, 1, 1)
+    local BLACK = Color3.new(0, 0, 0)
+    local FONT = {
+        [0] = Enum.Font.Gotham, [1] = Enum.Font.SourceSans,
+        [2] = Enum.Font.RobotoMono, [3] = Enum.Font.Code,
+    }
 
-    local function toTeam(v)
-        local t = typeof(v)
-        if t == "Instance" then
-            if v:IsA("Team") then return v end
-        elseif t == "string" then
-            if v ~= "" then
-                local low = v:lower()
-                for _, tm in ipairs(TeamsSvc:GetTeams()) do
-                    if tm.Name:lower() == low then return tm end
+    -- objeto Drawing: guarda estado em d, aplica no Instance via set(chave); ignora escrita sem mudanca
+    local function proxy(d, set, destroy, extra)
+        local alive = true
+        return setmetatable({}, {
+            __index = function(_, k)
+                if k == "Remove" or k == "Destroy" then
+                    return function()
+                        if alive then
+                            alive = false
+                            destroy()
+                        end
+                    end
                 end
-            end
-        elseif t == "BrickColor" then
-            for _, tm in ipairs(TeamsSvc:GetTeams()) do
-                if tm.TeamColor == v then return tm end
-            end
-        elseif t == "Color3" then
-            for _, tm in ipairs(TeamsSvc:GetTeams()) do
-                if tm.TeamColor.Color == v then return tm end
-            end
-        end
-        return nil
-    end
-
-    local function resolveTeam(model, hum)
-        for _, holder in ipairs({ model, hum }) do
-            for _, key in ipairs(TEAM_KEYS) do
-                local ok, v = pcall(function() return holder:GetAttribute(key) end)
-                if ok and v ~= nil then
-                    local tm = toTeam(v)
-                    if tm then return tm end
+                if extra then
+                    local v = extra(k)
+                    if v ~= nil then return v end
                 end
-                local child = holder:FindFirstChild(key)
-                if child and child:IsA("ValueBase") then
-                    local tm = toTeam(child.Value)
-                    if tm then return tm end
-                end
-            end
+                return d[k]
+            end,
+            __newindex = function(_, k, v)
+                if not alive or d[k] == v then return end
+                d[k] = v
+                set(k)
+            end,
+        })
+    end
+
+    local function newFrame()
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0
+        f.AnchorPoint = Vector2.new(0.5, 0.5)
+        f.Visible = false
+        return f
+    end
+
+    local function placeLine(f, a, b, thickness)
+        local dx, dy = b.X - a.X, b.Y - a.Y
+        f.Size = UDim2.fromOffset(math.sqrt(dx * dx + dy * dy), thickness)
+        f.Position = UDim2.fromOffset((a.X + b.X) / 2, (a.Y + b.Y) / 2)
+        f.Rotation = math.deg(math.atan2(dy, dx))
+    end
+
+    local function square()
+        local d = { Visible = false, Color = WHITE, Transparency = 1, Thickness = 1, Filled = false,
+            Position = Vector2.zero, Size = Vector2.zero }
+        local f = Instance.new("Frame")
+        f.BorderSizePixel = 0
+        f.BackgroundTransparency = 1
+        f.Visible = false
+        local st = Instance.new("UIStroke")
+        st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        st.Parent = f
+        f.Parent = host
+        local function paint()
+            f.BackgroundColor3 = d.Color
+            f.BackgroundTransparency = d.Filled and (1 - d.Transparency) or 1
+            st.Enabled = not d.Filled
+            st.Color = d.Color
+            st.Thickness = d.Thickness
+            st.Transparency = 1 - d.Transparency
         end
-        local anc = model.Parent
-        while anc and anc ~= Workspace do
-            local low = anc.Name:lower()
-            for _, tm in ipairs(TeamsSvc:GetTeams()) do
-                if tm.Name:lower() == low then return tm end
-            end
-            anc = anc.Parent
+        paint()
+        local function set(k)
+            if k == "Visible" then f.Visible = d.Visible
+            elseif k == "Position" then f.Position = UDim2.fromOffset(d.Position.X, d.Position.Y)
+            elseif k == "Size" then f.Size = UDim2.fromOffset(d.Size.X, d.Size.Y)
+            else paint() end
         end
-        return nil
+        return proxy(d, set, function() f:Destroy() end)
     end
 
-    local function addNpc(hum)
-        if byHum[hum] or not isNpcHumanoid(hum) then return end
-        local model = hum.Parent
-        local proxy = { Name = model.Name, UserId = 0, Character = model, Team = resolveTeam(model, hum) }
-        byHum[hum] = proxy
-        a_.npcSet[proxy] = true
-        list[#list + 1] = proxy
-    end
-
-    local function removeNpc(hum)
-        local proxy = byHum[hum]
-        if not proxy then return end
-        byHum[hum] = nil
-        a_.npcSet[proxy] = nil
-        for idx, p in ipairs(list) do
-            if p == proxy then
-                table.remove(list, idx)
-                break
-            end
+    local function line()
+        local d = { Visible = false, Color = WHITE, Transparency = 1, Thickness = 1,
+            From = Vector2.zero, To = Vector2.zero }
+        local f = newFrame()
+        f.Parent = host
+        local function paint()
+            f.BackgroundColor3 = d.Color
+            f.BackgroundTransparency = 1 - d.Transparency
         end
-        dropBundle(proxy)
-    end
-
-    local function housekeeping()
-        for hum, proxy in pairs(byHum) do
-            local model = hum.Parent
-            if not model or not hum:IsDescendantOf(Workspace) or Players:GetPlayerFromCharacter(model) then
-                removeNpc(hum)
-            else
-                proxy.Name = model.Name
-                proxy.Character = model
-                proxy.Team = resolveTeam(model, hum)
-            end
+        paint()
+        -- o ESP sempre escreve From e depois To: a geometria so e recalculada em To (1 calculo por frame)
+        local function set(k)
+            if k == "Visible" then f.Visible = d.Visible
+            elseif k == "To" or k == "Thickness" then placeLine(f, d.From, d.To, d.Thickness)
+            elseif k == "From" then -- aguarda To
+            else paint() end
         end
+        return proxy(d, set, function() f:Destroy() end)
     end
 
-    local function scanAll(myRun)
-        local cnt = 0
-        for _, d in ipairs(Workspace:GetDescendants()) do
-            if d:IsA("Humanoid") then addNpc(d) end
-            cnt = cnt + 1
-            if cnt % 3000 == 0 then
-                task.wait()
-                if not running or myRun ~= runId then return end
-            end
+    local function text()
+        local d = { Visible = false, Color = WHITE, Transparency = 1, Size = 13, Text = "",
+            Center = false, Outline = false, OutlineColor = BLACK, Font = 2, Position = Vector2.zero }
+        local t = Instance.new("TextLabel")
+        t.BackgroundTransparency = 1
+        t.BorderSizePixel = 0
+        t.AutomaticSize = Enum.AutomaticSize.XY
+        t.Size = UDim2.fromOffset(0, 0)
+        t.TextXAlignment = Enum.TextXAlignment.Left
+        t.TextYAlignment = Enum.TextYAlignment.Top
+        t.TextWrapped = false
+        t.Visible = false
+        t.Parent = host
+        local function paint()
+            t.Text = d.Text
+            t.TextSize = d.Size
+            t.Font = FONT[d.Font] or Enum.Font.Code
+            t.TextColor3 = d.Color
+            t.TextTransparency = 1 - d.Transparency
+            t.TextStrokeColor3 = d.OutlineColor
+            t.TextStrokeTransparency = d.Outline and 0 or 1
+            t.AnchorPoint = Vector2.new(d.Center and 0.5 or 0, 0)
         end
-    end
-
-    local function stop()
-        running = false
-        runId = runId + 1
-        for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
-        conns = {}
-        for hum in pairs(byHum) do removeNpc(hum) end
-        list = {}
-    end
-
-    local function start()
-        if running then return end
-        running = true
-        runId = runId + 1
-        local myRun = runId
-        conns[#conns + 1] = Workspace.DescendantAdded:Connect(function(d)
-            if running and d:IsA("Humanoid") then
-                task.delay(0.5, function()
-                    if running and myRun == runId and d.Parent then addNpc(d) end
-                end)
-            end
-        end)
-        task.spawn(scanAll, myRun)
-        task.spawn(function()
-            while running and myRun == runId and not a_.destroyed do
-                task.wait(1)
-                if running and myRun == runId then pcall(housekeeping) end
+        paint()
+        local function set(k)
+            if k == "Visible" then t.Visible = d.Visible
+            elseif k == "Position" then t.Position = UDim2.fromOffset(d.Position.X, d.Position.Y)
+            elseif k == "Text" then t.Text = d.Text
+            else paint() end
+        end
+        return proxy(d, set, function() t:Destroy() end, function(k)
+            if k == "TextBounds" then
+                local ok, v = pcall(TextService.GetTextSize, TextService, d.Text, d.Size,
+                    FONT[d.Font] or Enum.Font.Code, Vector2.new(10000, 10000))
+                return ok and v or Vector2.zero
             end
         end)
     end
 
-    function a_.refreshNpc()
-        if aZ.npcEsp or aZ.aimbotNpc then start() else stop() end
-        if not aZ.npcEsp then
-            for _, p in ipairs(list) do dropBundle(p) end
+    local function circle()
+        local d = { Visible = false, Color = WHITE, Transparency = 1, Thickness = 1, Filled = false,
+            NumSides = 64, Radius = 0, Position = Vector2.zero }
+        local f = newFrame()
+        f.BackgroundTransparency = 1
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(1, 0)
+        corner.Parent = f
+        local st = Instance.new("UIStroke")
+        st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+        st.Parent = f
+        f.Parent = host
+        local function paint()
+            f.BackgroundColor3 = d.Color
+            f.BackgroundTransparency = d.Filled and (1 - d.Transparency) or 1
+            st.Enabled = not d.Filled
+            st.Color = d.Color
+            st.Thickness = d.Thickness
+            st.Transparency = 1 - d.Transparency
         end
+        paint()
+        local function set(k)
+            if k == "Visible" then f.Visible = d.Visible
+            elseif k == "Position" then f.Position = UDim2.fromOffset(d.Position.X, d.Position.Y)
+            elseif k == "Radius" then f.Size = UDim2.fromOffset(d.Radius * 2, d.Radius * 2)
+            else paint() end
+        end
+        return proxy(d, set, function() f:Destroy() end)
     end
 
-    local function usable(p)
-        if not aZ.npcSkipProtected then return true end
-        local model = p.Character
-        if not model then return false end
-        if model:GetAttribute("Alive") == false then return false end
-        if model:GetAttribute("Protected") == true then return false end
-        return true
-    end
-
-    function a_.npcList(origin)
-        local out = {}
-        local lim = (aZ.maxDistance or 1500) * 1.25
-        for _, p in ipairs(list) do
-            local model = p.Character
-            local root = model and (model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart)
-            if root and (root.Position - origin).Magnitude <= lim and usable(p) then
-                out[#out + 1] = p
-            else
-                dropBundle(p)
+    local function triangle()
+        local d = { Visible = false, Color = WHITE, Transparency = 1, Thickness = 1, Filled = false,
+            PointA = Vector2.zero, PointB = Vector2.zero, PointC = Vector2.zero }
+        local e = {}
+        for i = 1, 3 do
+            e[i] = newFrame()
+            e[i].Parent = host
+        end
+        local function paint()
+            for _, f in ipairs(e) do
+                f.BackgroundColor3 = d.Color
+                f.BackgroundTransparency = 1 - d.Transparency
             end
         end
-        return out
-    end
-
-    function a_.targetList()
-        local t = Players:GetPlayers()
-        if aZ.aimbotNpc then
-            for _, p in ipairs(list) do
-                if usable(p) then t[#t + 1] = p end
-            end
+        local function geom()
+            placeLine(e[1], d.PointA, d.PointB, d.Thickness)
+            placeLine(e[2], d.PointB, d.PointC, d.Thickness)
+            placeLine(e[3], d.PointC, d.PointA, d.Thickness)
         end
-        return t
-    end
-
-    a_.cleanupNpcEsp = stop
-    a_.refreshNpc()
-end)()
-;(function()
-    local Players, Workspace = i, workspace
-    local S = {
-        enabled = false, lock = false, method = "All",
-        fov = 120, dist = 500, hit = 100, predict = 0, part = "Head",
-        wall = true, showFov = true, needTool = true, priority = "Closest to Crosshair",
-        burstPattern = false, burstFirstPart = "Torso", burstFirstShots = 2, burstThenPart = "Head", shotCount = 0,
-        pos = nil, tPart = nil, tHum = nil, tPlayer = nil, center = Vector2.zero, projDelta = Vector2.zero, camPos = Vector3.zero, rootPos = Vector3.zero, mouse = nil,
-    }
-    a_.silent = S
-    aX.__UM_SILENT = S
-    pcall(function() S.mouse = aW:GetMouse() end)
-
-    -- Keys match the menu labels. R15 names first, R6 fallback names last, so it works on both rig types.
-    local PARTS = {
-        ["Head"] = { "Head" },
-        ["Torso"] = { "UpperTorso", "Torso", "LowerTorso", "HumanoidRootPart" },
-        ["Right Arm"] = { "RightUpperArm", "RightHand", "RightLowerArm", "Right Arm" },
-        ["Left Arm"] = { "LeftUpperArm", "LeftHand", "LeftLowerArm", "Left Arm" },
-        ["Right Leg"] = { "RightUpperLeg", "RightLowerLeg", "RightFoot", "Right Leg" },
-        ["Left Leg"] = { "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "Left Leg" },
-    }
-
-    -- Smaller key wins. dd = pixels from screen center, dist = studs from camera, hp = Humanoid.Health
-    local PRIORITY = {
-        ["Closest to Crosshair"] = function(dd, dist, hp) return dd end,
-        ["Closest"]              = function(dd, dist, hp) return dist end,
-        ["Farthest"]             = function(dd, dist, hp) return -dist end,
-        ["Lowest Health"]        = function(dd, dist, hp) return hp end,
-        ["Highest Health"]       = function(dd, dist, hp) return -hp end,
-    }
-
-    function S.near(origin)
-        return (origin - S.camPos).Magnitude < 20 or (origin - S.rootPos).Magnitude < 20
-    end
-
-    function S.roll()
-        return S.hit >= 100 or math.random(1, 100) <= S.hit
-    end
-
-    -- IMPORTANT: everything called from inside the hooks must avoid colon method calls (cf:PointToObjectSpace,
-    -- v:Dot, inst:Foo). Any method call overwrites the pending namecall name, and the original __namecall
-    -- would then run the wrong method and error inside the game's gun script.
-    local function projectToViewport(cf, fovDeg, vp, worldPos)
-        local p, r, u, f = cf.Position, cf.RightVector, cf.UpVector, cf.LookVector
-        local dx, dy, dz = worldPos.X - p.X, worldPos.Y - p.Y, worldPos.Z - p.Z
-        local depth = dx * f.X + dy * f.Y + dz * f.Z
-        if depth <= 0.001 then return nil end
-        local x = dx * r.X + dy * r.Y + dz * r.Z
-        local y = dx * u.X + dy * u.Y + dz * u.Z
-        local tn = math.tan(math.rad(fovDeg) / 2)
-        return Vector2.new((x / depth / (tn * vp.X / vp.Y) + 1) * 0.5 * vp.X, (1 - y / depth / tn) * 0.5 * vp.Y)
-    end
-
-    local function aimPos(part)
-        local p = part.Position
-        local lead = S.predict or 0
-        if lead > 0 then
-            local v = part.AssemblyLinearVelocity
-            if typeof(v) == "Vector3" then p = p + v * lead end
+        paint()
+        -- o ESP escreve PointA, PointB e por ultimo PointC
+        local function set(k)
+            if k == "Visible" then
+                for _, f in ipairs(e) do f.Visible = d.Visible end
+            elseif k == "PointC" or k == "Thickness" then geom()
+            elseif k == "PointA" or k == "PointB" then -- aguarda PointC
+            else paint() end
         end
-        return p
+        return proxy(d, set, function()
+            for _, f in ipairs(e) do f:Destroy() end
+        end)
     end
 
-    local function stillInside()
-        local part, hum, cam = S.tPart, S.tHum, Workspace.CurrentCamera
-        if not (part and hum and cam) or part.Parent == nil or hum.Health <= 0 then return false end
-        local pos = part.Position
-        local pt = projectToViewport(cam.CFrame, cam.FieldOfView, cam.ViewportSize, pos)
-        if not pt then return false end
-        if (pt + S.projDelta - S.center).Magnitude > S.fov + 6 then return false end
-        S.pos = aimPos(part)
-        return true
+    local ctors = { Square = square, Line = line, Text = text, Circle = circle, Triangle = triangle }
+    local D = { Fonts = { UI = 0, System = 1, Plex = 2, Monospace = 3 } }
+    function D.new(kind)
+        local c = ctors[kind]
+        if not c then error("Drawing.new: tipo invalido " .. tostring(kind), 2) end
+        return c()
     end
+    function D.clear() end
+    return D
+end
 
-    -- Hook entry point: target still alive and inside the FOV circle, and the hit-chance roll passed.
-    -- Fails open (a bug in the check never blocks a shot) and restores the pending namecall name.
-    function S.shotOk(m)
-        local ok, res = pcall(stillInside)
-        if not ok then res = true end
-        if not res then S.lock = false end
-        res = res and S.roll()
-        if m and typeof(setnamecallmethod) == "function" then setnamecallmethod(m) end
-        return res
+local function drawingWorks()
+    local D = env.Drawing or Drawing
+    if type(D) ~= "table" or type(D.new) ~= "function" then return false end
+    for _, kind in ipairs({ "Square", "Line", "Text", "Circle" }) do
+        local ok, o = pcall(D.new, kind)
+        if not ok or o == nil then return false end
+        pcall(function() o.Visible = false end)
+        pcall(function() o:Remove() end)
     end
+    return true
+end
 
-    local function ours()
-        return typeof(checkcaller) == "function" and checkcaller()
+-- ------------------------------------------------------------
+-- Ponte para o chunk do VantaX (prelude injetado no topo do codigo)
+-- ------------------------------------------------------------
+local compat = { http = httpGet }
+env.__VX_COMPAT = compat
+pcall(function() _G.__VX_COMPAT = compat end)
+
+local PRELUDE = 'local __VX=(getgenv and getgenv().__VX_COMPAT)or _G.__VX_COMPAT or {};'
+    .. 'local __VX_HTTP=__VX.http or function(u)return game:HttpGet(u)end;'
+    .. 'local Drawing=__VX.Drawing or Drawing;'
+
+local drawMode = "nativo"
+if not drawingWorks() then
+    local ok, D = pcall(buildDrawingShim)
+    if ok and D then
+        compat.Drawing = D
+        drawMode = "fallback (Instances)"
+    else
+        drawMode = "INDISPONIVEL"
+        bad("Drawing indisponivel e o fallback falhou:", tostring(D))
     end
+end
 
-    local function installHooks(wantMouse)
-        if typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then return false end
-        local wrap = typeof(newcclosure) == "function" and newcclosure or function(f) return f end
-        if not aX.__UM_SA_NC3 then
-            aX.__UM_SA_NC3 = true
-            local old
-            old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
-                local m = getnamecallmethod()
-                local st = aX.__UM_SILENT
-                if st and st.lock and st.method ~= "Mouse" and self == Workspace and not ours() then
-                    if m == "Raycast" then
-                        local origin, direction, params = ...
-                        if typeof(origin) == "Vector3" and typeof(direction) == "Vector3" and st.near(origin) and st.shotOk(m) then
-                            local d = st.pos - origin
-                            if d.Magnitude > 0.001 then
-                                st.shotCount = (st.shotCount or 0) + 1
-                                return old(self, origin, d.Unit * direction.Magnitude, params)
-                            end
-                        end
-                    elseif m == "FindPartOnRay" or m == "FindPartOnRayWithIgnoreList" or m == "FindPartOnRayWithWhitelist" then
-                        local ray = ...
-                        if typeof(ray) == "Ray" and st.near(ray.Origin) and st.shotOk(m) then
-                            local d = st.pos - ray.Origin
-                            if d.Magnitude > 0.001 then
-                                st.shotCount = (st.shotCount or 0) + 1
-                                return old(self, Ray.new(ray.Origin, d.Unit * ray.Direction.Magnitude), select(2, ...))
-                            end
-                        end
-                    end
-                end
-                return old(self, ...)
-            end))
-        end
-        if wantMouse and not aX.__UM_SA_IX3 then
-            aX.__UM_SA_IX3 = true
-            local oldIndex
-            oldIndex = hookmetamethod(game, "__index", wrap(function(self, key)
-                local st = aX.__UM_SILENT
-                if st and st.lock and st.method ~= "Raycast" and st.mouse and self == st.mouse and (key == "Hit" or key == "Target") and not ours() then
-                    if st.shotOk() then
-                        if key == "Hit" then return CFrame.new(st.pos) end
-                        return st.tPart
-                    end
-                end
-                return oldIndex(self, key)
-            end))
-        end
-        return true
+-- ------------------------------------------------------------
+-- Relatorio de capacidades do executor
+-- ------------------------------------------------------------
+local silentOk = has("hookmetamethod") and has("getnamecallmethod")
+local plat = "?"
+pcall(function() plat = tostring(UIS:GetPlatform()):gsub("Enum.Platform.", "") end)
+log(("plataforma=%s | touch=%s | teclado=%s"):format(plat, tostring(UIS.TouchEnabled), tostring(UIS.KeyboardEnabled)))
+log("Drawing:", drawMode)
+log("Silent Aim:", silentOk and "ok" or "INDISPONIVEL (falta hookmetamethod/getnamecallmethod no executor)")
+log("newcclosure:", tostring(has("newcclosure")), "| checkcaller:", tostring(has("checkcaller")),
+    "| gethui:", tostring(has("gethui")), "| firesignal:", tostring(has("firesignal")))
+
+-- ------------------------------------------------------------
+-- Patches no codigo do VantaX (em memoria)
+-- ------------------------------------------------------------
+local PATCHES = {
+    {
+        name = "HttpGet com fallback (Slate + server hop)",
+        old = "game:HttpGet(", new = "__VX_HTTP(", all = true,
+    },
+    {
+        -- o wall-check do aimbot/silent chamava workspace:Raycast (namecall) e podia cair no proprio hook do
+        -- silent aim; chamada com ponto nao passa pelo __namecall
+        name = "wall-check fora do hook do silent aim",
+        old = "workspace:Raycast(ca,bi.Position-ca,eq)",
+        new = "workspace.Raycast(workspace,ca,bi.Position-ca,eq)",
+    },
+}
+
+local function replacePlain(src, old, new, all)
+    local out, pos, n = {}, 1, 0
+    while true do
+        local s, e = string.find(src, old, pos, true)
+        if not s then break end
+        out[#out + 1] = string.sub(src, pos, s - 1)
+        out[#out + 1] = new
+        pos = e + 1
+        n = n + 1
+        if not all then break end
     end
+    out[#out + 1] = string.sub(src, pos)
+    return table.concat(out), n
+end
 
-    -- Pure: which PARTS key to aim at next. The first firstShots shots go to firstPart, every later shot to thenPart.
-    local function patternPart(burstOn, firstShots, shotsSoFar, firstPart, thenPart, fallbackPart)
-        if not burstOn then return fallbackPart end
-        if shotsSoFar < firstShots then return firstPart end
-        return thenPart
+local okFetch, src = pcall(httpGet, SRC_URL)
+if not okFetch then
+    bad("nao consegui baixar o VantaX:", tostring(src))
+    return
+end
+
+local patched = src
+for _, p in ipairs(PATCHES) do
+    local out, n = replacePlain(patched, p.old, p.new, p.all)
+    if n == 0 then
+        bad("patch NAO aplicado (trecho nao encontrado):", p.name)
+    else
+        patched = out
+        log("patch ok:", p.name, "x" .. n)
     end
+end
 
-    local function pickPart(model, partKey)
-        for _, nm in ipairs(PARTS[partKey] or PARTS["Head"]) do
-            local p = model:FindFirstChild(nm)
-            if p and p:IsA("BasePart") then return p end
-        end
-        return model:FindFirstChild("Head")
-    end
+local chunk, err = loadstring(PRELUDE .. patched, "=VantaX")
+if not chunk then
+    bad("versao corrigida nao compilou, usando a original:", tostring(err))
+    chunk, err = loadstring(PRELUDE .. src, "=VantaX")
+end
+if not chunk then
+    bad("falha ao compilar o VantaX:", tostring(err))
+    return
+end
 
-    local function compute()
-        S.lock, S.pos, S.tPart, S.tHum, S.tPlayer = false, nil, nil, nil, nil
-        if not S.enabled or a_.destroyed then return end
-        local cam = Workspace.CurrentCamera
-        if not cam then return end
-        local myChar = aW.Character
-        local myHum = myChar and myChar:FindFirstChildOfClass("Humanoid")
-        if not myHum or myHum.Health <= 0 then return end
-        if S.needTool and not myChar:FindFirstChildOfClass("Tool") then return end
-        local camPos = cam.CFrame.Position
-        local myRoot = myChar:FindFirstChild("HumanoidRootPart")
-        S.camPos = camPos
-        S.rootPos = myRoot and myRoot.Position or camPos
-        local center = cam.ViewportSize / 2
-        S.center = center
-        local keyFn = PRIORITY[S.priority] or PRIORITY["Closest to Crosshair"]
-        local wantPartKey = patternPart(S.burstPattern, S.burstFirstShots, S.shotCount, S.burstFirstPart, S.burstThenPart, S.part)
-        local bestKey, bestTie, bestPart, bestHum, bestSp, bestPl = math.huge, math.huge, nil, nil, nil, nil
-        for _, pl in ipairs(a_.targetList and a_.targetList() or Players:GetPlayers()) do
-            if pl ~= aW and ((a_.npcSet and a_.npcSet[pl]) or not bp.Protected(pl))
-                and not (aZ.aimbotTeamCheck and aW.Team and pl.Team == aW.Team) then
-                local model = pl.Character
-                local part = model and pickPart(model, wantPartKey)
-                local hum = model and model:FindFirstChildOfClass("Humanoid")
-                local dist = part and (part.Position - camPos).Magnitude or math.huge
-                if part and hum and hum.Health > 0 and dist <= S.dist then
-                    local sp, onScreen = cam:WorldToViewportPoint(part.Position)
-                    if onScreen and sp.Z > 0 then
-                        local dd = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-                        if dd <= S.fov then
-                            local key = keyFn(dd, dist, hum.Health)
-                            -- wall check only for candidates that would actually replace the current best
-                            if (key < bestKey or (key == bestKey and dd < bestTie))
-                                and (not S.wall or h6(cam, part, model)) then
-                                bestKey, bestTie, bestPart, bestHum, bestSp, bestPl = key, dd, part, hum, Vector2.new(sp.X, sp.Y), pl
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        if bestPart then
-            -- offset between the engine projection and the plain-math one, so both agree on the FOV edge
-            local pure = projectToViewport(cam.CFrame, cam.FieldOfView, cam.ViewportSize, bestPart.Position)
-            S.projDelta = pure and (bestSp - pure) or Vector2.zero
-            S.tPart, S.tHum, S.tPlayer, S.pos, S.lock = bestPart, bestHum, bestPl, aimPos(bestPart), true
-        end
-    end
+local okRun, runErr = xpcall(chunk, function(e) return debug.traceback(tostring(e), 2) end)
+if not okRun then
+    bad("erro ao executar o VantaX:\n" .. tostring(runErr))
+    return
+end
 
-    local circle
-    local function updateCircle()
-        if not (S.enabled and S.showFov) then
-            if circle then pcall(function() circle.Visible = false end) end
-            return
-        end
-        if not circle then
-            local ok, c = pcall(function() return Drawing.new("Circle") end)
-            if not ok or not c then
-                S.showFov = false
-                return
-            end
-            circle = c
-            pcall(function()
-                circle.NumSides = 64
-                circle.Thickness = 1
-                circle.Filled = false
-                circle.Transparency = 1
-                circle.Color = Color3.fromRGB(170, 70, 255)
-            end)
-        end
-        local cam = Workspace.CurrentCamera
-        if cam then
-            pcall(function()
-                circle.Position = cam.ViewportSize / 2
-                circle.Radius = S.fov
-                circle.Visible = true
-            end)
-        end
-    end
-
-    local conn = k.RenderStepped:Connect(function()
-        pcall(compute)
-        pcall(updateCircle)
+if SHOW_MENU_ON_LOAD then
+    task.delay(0.5, function()
+        local w = env.__VORTEX_HUB_WINDOW
+        if w then pcall(function() w:SetVisible(true) end) end
     end)
+end
 
-    function a_.setSilent(on)
-        S.enabled = on == true
-        if S.enabled and not installHooks(S.method ~= "Raycast") then
-            S.enabled = false
-            pcall(b2, "Your executor has no hookmetamethod: silent aim unavailable")
-        end
-    end
-
-    function a_.setSilentMethod(m)
-        S.method = m
-        if S.enabled and m ~= "Raycast" then installHooks(true) end
-    end
-
-    function a_.cleanupSilent()
-        S.enabled, S.lock = false, false
-        pcall(function() conn:Disconnect() end)
-        if circle then
-            pcall(function() circle:Remove() end)
-            circle = nil
-        end
-    end
-end)()
-local m0=f0:CreateTab({Name=("ESP"),Icon=("eye")})m0:SetColumns(2)local m1=m0:CreateSection({Name=("General")})m1:Toggle({Name=("Enable ESP"),Default=false,Callback=function(C)aZ.espEnabled=C;if not C then pcall(fZ)end end})m1:Slider({Name=("Max Distance"),Min=100,Max=5000,Default=1500,Callback=function(C)aZ.maxDistance=C end})m1:Toggle({Name=("Hide Teammates"),Default=false,Callback=function(C)aZ.hideTeamEsp=C end})local m2=m0:CreateSection({Name=("Shapes")})m2:Toggle({Name=("2D Box"),Default=false,Callback=function(C)aZ.box=C end})m2:Toggle({Name=("3D Box"),Default=false,Callback=function(C)aZ.box3d=C end})m2:Toggle({Name=("Skeleton"),Default=false,Callback=function(C)aZ.skeleton=C end})m2:Toggle({Name=("Highlight"),Default=false,Callback=function(C)aZ.highlight=C end})local m2b=m0:CreateSection({Name=("Info")})m2b:Toggle({Name=("Name"),Default=false,Callback=function(C)aZ.name=C end})m2b:Toggle({Name=("Distance"),Default=false,Callback=function(C)aZ.distance=C end})m2b:Toggle({Name=("Held Item"),Default=false,Callback=function(C)aZ.heldItem=C end})m2b:Toggle({Name=("Team Name"),Default=false,Callback=function(C)aZ.teamTag=C end})local m2c=m0:CreateSection({Name=("Lines & Arrows")})m2c:Toggle({Name=("Tracers"),Default=false,Callback=function(C)aZ.tracer=C end})m2c:Toggle({Name=("Off-screen Arrows"),Default=false,Callback=function(C)aZ.arrow=C end})local m3=f0:CreateTab({Name=("AIMBOT"),Icon=("crosshair")})m3:SetColumns(2)local m4=m3:CreateSection({Name=("Aimbot")})m4:Toggle({Name=("Enable Aimbot"),Default=false,Callback=function(C)aZ.aimbotEnabled=C;if C then pcall(hd)else pcall(hl)end end})m4:Dropdown({Name=("Mode"),Options={("Legit"),("Rage")},Default=("Legit"),Callback=function(C)aZ.aimbotMode=C end})m4:Dropdown({Name=("Target Part"),Options={("Head"),("Torso")},Default=("Head"),Callback=function(C)aZ.aimbotBodyPart=(C==("Head")and("Cabeca")or("Tronco")) end})m4:Dropdown({Name=("Target Priority"),Options={("Closest to Crosshair"),("Closest"),("Farthest"),("Lowest Health"),("Highest Health")},Default=("Closest to Crosshair"),Callback=function(C)aZ.aimbotPriority=C end})m4:Toggle({Name=("Hold RMB to Aim"),Default=false,Callback=function(C)aZ.aimbotHoldRMB=C end})local m4b=m3:CreateSection({Name=("Settings")})m4b:Slider({Name=("FOV"),Min=10,Max=600,Default=120,Callback=function(C)aZ.aimbotFov=C end})m4b:Slider({Name=("Max Distance"),Min=50,Max=1000,Default=500,Callback=function(C)aZ.aimbotDistance=C end})m4b:Slider({Name=("Smoothness"),Min=1,Max=100,Default=15,Callback=function(C)aZ.aimbotSmoothness=C/100 end})m4b:Slider({Name=("Prediction (ms)"),Min=0,Max=200,Default=0,Callback=function(C)aZ.aimbotPredict=C/1000 end})m4b:Toggle({Name=("FOV Circle"),Default=false,Callback=function(C)aZ.aimbotShowFov=C end})local m5=m3:CreateSection({Name=("Filters")})m5:Toggle({Name=("Ignore Teammates"),Default=true,Callback=function(C)aZ.aimbotTeamCheck=C end})m5:Toggle({Name=("Wall Check"),Default=true,Callback=function(C)aZ.aimbotWallCheck=C end})m5:Toggle({Name=("Ignore Friends"),Default=true,Callback=function(C)aZ.friendCheck=C end})m5:Toggle({Name=("Ignore Staff"),Default=true,Callback=function(C)aZ.adminCheck=C end})local mS=f0:CreateTab({Name=("SILENT AIM"),Icon=("target")})mS:SetColumns(2)local sS=mS:CreateSection({Name=("Silent Aim")})sS:Toggle({Name=("Enable Silent Aim"),Default=false,Callback=function(C)pcall(a_.setSilent,C)end})sS:Dropdown({Name=("Target Part"),Options={("Head"),("Torso"),("Right Arm"),("Left Arm"),("Right Leg"),("Left Leg")},Default=("Head"),Callback=function(C)a_.silent.part=C end})sS:Dropdown({Name=("Target Priority"),Options={("Closest to Crosshair"),("Closest"),("Farthest"),("Lowest Health"),("Highest Health")},Default=("Closest to Crosshair"),Callback=function(C)a_.silent.priority=C end})local sS4=mS:CreateSection({Name=("Shot Pattern")})sS4:Toggle({Name=("Enable Shot Pattern"),Default=false,Callback=function(C)a_.silent.burstPattern=C;a_.silent.shotCount=0 end})sS4:Dropdown({Name=("First Target Part"),Options={("Head"),("Torso"),("Right Arm"),("Left Arm"),("Right Leg"),("Left Leg")},Default=("Torso"),Callback=function(C)a_.silent.burstFirstPart=C end})sS4:Slider({Name=("Shots on First Part"),Min=1,Max=10,Default=2,Callback=function(C)a_.silent.burstFirstShots=math.max(1,math.floor(tonumber(C)or 2))end})sS4:Dropdown({Name=("Then Target Part"),Options={("Head"),("Torso"),("Right Arm"),("Left Arm"),("Right Leg"),("Left Leg")},Default=("Head"),Callback=function(C)a_.silent.burstThenPart=C end})local sS2=mS:CreateSection({Name=("Settings")})sS2:Slider({Name=("FOV"),Min=10,Max=600,Default=120,Callback=function(C)a_.silent.fov=C end})sS2:Slider({Name=("Max Distance"),Min=50,Max=1000,Default=500,Callback=function(C)a_.silent.dist=C end})sS2:Slider({Name=("Hit Chance"),Min=1,Max=100,Default=100,Callback=function(C)a_.silent.hit=C end})sS2:Slider({Name=("Prediction (ms)"),Min=0,Max=200,Default=0,Callback=function(C)a_.silent.predict=C/1000 end})sS2:Toggle({Name=("FOV Circle"),Default=true,Callback=function(C)a_.silent.showFov=C end})local sS3=mS:CreateSection({Name=("Filters")})sS3:Toggle({Name=("Wall Check"),Default=true,Callback=function(C)a_.silent.wall=C end})sS3:Toggle({Name=("Weapon Required"),Default=true,Callback=function(C)a_.silent.needTool=C end})local mj=f0:CreateTab({Name=("SETTINGS"),Icon=("wrench")})mj:SetColumns(2)local mk=mj:CreateSection({Name=("About")})mk:Label({Text=("Vortex Hub\nUniversal Script\nBuild: vortex-universal-v1\n\nK = menu | F = fly | N = noclip")})local ml=mj:CreateSection({Name=("Menu")})ml:Button({Name=("Reset Menu"),Callback=function()for L,C in pairs(aZ)do if type(C)==("boolean")then aZ[L]=false end end;if a_.noclip then a_.noclip.restore()end;if a_.retornoControl then a_.retornoControl:Set(false,true)end;aZ.spoofWalkSpeed=40;aZ.spoofJumpPower=90;aZ.flySpeed=60;aZ.maxDistance=aY;aZ.aimbotFov=120;aZ.aimbotDistance=500;aZ.aimbotSmoothness=0.15;aZ.vFlyHorizontalSpeed=60;aZ.vFlyVerticalSpeed=30;aZ.autoColetaCooldown=0.35;aZ.autoFarmLixeiroQuantidade=20;aZ.boostFactor=1;aZ.carEspDistance=1500;if a_.restoreJumpPower then pcall(a_.restoreJumpPower)end;if a_.restoreGraphics then pcall(a_.restoreGraphics)end;if a_.stopGhost then pcall(a_.stopGhost)end;if a_.stopAimbot then pcall(hl)end;if fZ then pcall(fZ)end;pcall(cU)b2(("Menu reset"))end})local ml2=mj:CreateSection({Name=("Server")})ml2:Button({Name=("Rejoin (Same Server)"),Callback=function()b2(("Rejoining..."))task.spawn(function()pcall(function()if#i:GetPlayers()<=1 or game.JobId==("")then aT:Teleport(game.PlaceId,aW)else aT:TeleportToPlaceInstance(game.PlaceId,game.JobId,aW)end end)end)end})ml2:Button({Name=("Server Hop"),Callback=function()b2(("Searching for a server..."))task.spawn(function()local u,x=pcall(function()return game:HttpGet(string.format(("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"),game.PlaceId))end)if not u or type(x)~=("string")then b2(("Failed to fetch servers"))return end;local mm,A=pcall(function()return m:JSONDecode(x)end)if not mm or not A or not A.data then b2(("Invalid server list"))return end;local mn={}for aO,O in ipairs(A.data)do if O.id~=game.JobId and O.playing<O.maxPlayers then table.insert(mn,O)end end;if#mn==0 then b2(("No open servers"))return end;local jP=mn[math.random(1,#mn)]pcall(function()aT:TeleportToPlaceInstance(game.PlaceId,jP.id,aW)end)end)end})ml:Button({Name=("Close Menu"),Callback=function()pcall(function()f0:SetVisible(false)end)b2(("Press K to reopen"))end})b0(l.InputBegan:Connect(function(ad,hx)if hx or a_.destroyed then return end;if ad.KeyCode==aZ.flyKeybind then aZ.flyEnabled=not aZ.flyEnabled;b2(aZ.flyEnabled and("Fly ON")or("Fly OFF"))elseif ad.KeyCode==aZ.noclipKeybind then aZ.noclipEnabled=not aZ.noclipEnabled;pcall(cU)b2(aZ.noclipEnabled and("Noclip ON")or("Noclip OFF"))end end))aX.__VORTEX_HUB_WINDOW=f0;aX.__VORTEX_HUB_BUILD=("vortex-universal-v1")aX.__VORTEX_HUB_CLEANUP=function()a_.destroyed=true;pcall(a_.camFlyStop)if a_.noclip then a_.noclip.restore()end;if a_.restoreJumpPower then pcall(a_.restoreJumpPower)end;if a_.restoreGraphics then pcall(a_.restoreGraphics)end;aX.__VORTEX_HUB_RUNTIME=nil;aZ.autoColetaEnabled=false;if a_.stopGhost then pcall(a_.stopGhost)end;if a_.stopAimbot then pcall(hl)end;if fZ then pcall(fZ)end;if a_.cleanupNpcEsp then pcall(a_.cleanupNpcEsp)end;if a_.cleanupSilent then pcall(a_.cleanupSilent)end;for aO,b1 in ipairs(a_.connections)do pcall(function()b1:Disconnect()end)end;a_.connections={}for bz in pairs(aZ.bundles)do pcall(fX,aZ.bundles[bz])aZ.bundles[bz]=nil end;pcall(function()f0:Destroy()end)pcall(function()aR.Cleanup()end)aX.__VORTEX_HUB_WINDOW=nil;aX.__VORTEX_HUB_CLEANUP=nil;print(("[Vortex Hub] Unloaded"))end;print(("[Vortex Hub] Loaded"))print(("[Vortex Hub] K = menu | F = fly | N = noclip"))
+pcall(function()
+    StarterGui:SetCore("SendNotification", {
+        Title = "VantaX",
+        Text = "Drawing: " .. drawMode .. " | Silent Aim: " .. (silentOk and "ok" or "indisponivel"),
+        Duration = 8,
+    })
+end)
