@@ -1,11 +1,13 @@
 -- ============================================================
--- VantaX_fix.lua | loader de compatibilidade (PC / Android / iOS)
--- Baixa o VantaX do repo, aplica as correcoes em memoria e executa.
--- O arquivo original NAO e alterado. Logs no console (F9): [VantaX-fix]
+-- VantaX_fix_v2.lua | loader de compatibilidade (PC / Android / iOS)
+-- * mostra o log NA TELA (nao depende de console/F9)
+-- * se o VantaX/Slate falhar, abre um menu LITE de emergencia
+-- * botoes fixos na lateral esquerda: VX = abre/fecha o menu do VantaX | LT = menu LITE
+-- * o arquivo original do repo NAO e alterado
 -- ============================================================
 
 local SRC_URL           = "https://raw.githubusercontent.com/jhamesuser-byte/Xyz-hub/refs/heads/main/VantaX"
-local SHOW_MENU_ON_LOAD = true -- o original inicia com o menu escondido (so abria com K / icone no mobile)
+local SHOW_MENU_ON_LOAD = true
 
 local Players     = game:GetService("Players")
 local UIS         = game:GetService("UserInputService")
@@ -13,12 +15,78 @@ local StarterGui  = game:GetService("StarterGui")
 local TextService = game:GetService("TextService")
 local env         = (getgenv and getgenv()) or _G
 
-local function log(...) print("[VantaX-fix]", ...) end
-local function bad(...) warn("[VantaX-fix]", ...) end
 local function has(name) return typeof(env[name]) == "function" end
 
 -- ------------------------------------------------------------
--- HTTP com fallback (alguns executores de PC nao tem game:HttpGet)
+-- GUI: monta um ScreenGui no melhor lugar disponivel
+-- ------------------------------------------------------------
+local function mount(gui, playerGuiFirst)
+    local function try(getParent)
+        local ok = pcall(function() gui.Parent = getParent() end)
+        return ok and gui.Parent ~= nil
+    end
+    local function viaPlayerGui() return Players.LocalPlayer:WaitForChild("PlayerGui", 5) end
+    local function viaGethui() return has("gethui") and gethui() or nil end
+    local function viaCoreGui() return game:GetService("CoreGui") end
+    local order
+    if playerGuiFirst then
+        order = { viaPlayerGui, viaGethui, viaCoreGui }
+    else
+        order = { viaGethui, viaCoreGui, viaPlayerGui }
+    end
+    for _, g in ipairs(order) do
+        if try(g) then return true end
+    end
+    return false
+end
+
+-- ------------------------------------------------------------
+-- LOG NA TELA (toque no log para fechar)
+-- ------------------------------------------------------------
+local function makeLog()
+    local lines, label, gui = {}, nil, nil
+    pcall(function()
+        gui = Instance.new("ScreenGui")
+        gui.Name = "VX_Log"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 2147483646
+        label = Instance.new("TextButton")
+        label.AutoButtonColor = false
+        label.Size = UDim2.new(0.62, 0, 0, 0)
+        label.AutomaticSize = Enum.AutomaticSize.Y
+        label.Position = UDim2.fromOffset(60, 6)
+        label.BackgroundColor3 = Color3.new(0, 0, 0)
+        label.BackgroundTransparency = 0.3
+        label.TextColor3 = Color3.new(1, 1, 1)
+        label.Font = Enum.Font.Code
+        label.TextSize = 13
+        label.TextWrapped = true
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.TextYAlignment = Enum.TextYAlignment.Top
+        label.Text = ""
+        label.Parent = gui
+        label.Activated:Connect(function() gui:Destroy() end)
+        mount(gui, true)
+    end)
+    local function say(msg)
+        msg = tostring(msg)
+        print("[VantaX-fix] " .. msg)
+        lines[#lines + 1] = msg
+        if #lines > 12 then table.remove(lines, 1) end
+        if label and label.Parent then label.Text = table.concat(lines, "\n") end
+    end
+    local function hide()
+        if gui then pcall(function() gui:Destroy() end) end
+    end
+    return say, hide
+end
+
+local say, hideLog = makeLog()
+say("1/6 loader iniciou")
+
+-- ------------------------------------------------------------
+-- HTTP com fallback
 -- ------------------------------------------------------------
 local function httpGet(url)
     local ok, res = pcall(function() return game:HttpGet(url) end)
@@ -35,8 +103,7 @@ local function httpGet(url)
 end
 
 -- ------------------------------------------------------------
--- Drawing fallback (Instances) - usado so se o executor nao tiver Drawing
--- Cobre: Square, Line, Text, Circle, Triangle (contorno)
+-- Drawing fallback (Instances) - so se o executor nao tiver Drawing
 -- ------------------------------------------------------------
 local function buildDrawingShim()
     if env.__VX_DRAW_HOST then pcall(function() env.__VX_DRAW_HOST:Destroy() end) end
@@ -44,19 +111,11 @@ local function buildDrawingShim()
     local host = Instance.new("ScreenGui")
     host.Name = "VX_Draw"
     host.ResetOnSpawn = false
-    host.IgnoreGuiInset = true -- coordenadas = viewport, igual ao WorldToViewportPoint usado no ESP
+    host.IgnoreGuiInset = true
     host.DisplayOrder = 2147483647
     host.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     if syn and syn.protect_gui then pcall(syn.protect_gui, host) end
-
-    local function tryParent(getParent)
-        local ok = pcall(function() host.Parent = getParent() end)
-        return ok and host.Parent ~= nil
-    end
-    local parented = (has("gethui") and tryParent(gethui))
-        or tryParent(function() return game:GetService("CoreGui") end)
-        or tryParent(function() return Players.LocalPlayer:WaitForChild("PlayerGui", 5) end)
-    if not parented then return nil end
+    if not mount(host, false) then return nil end
     env.__VX_DRAW_HOST = host
 
     local WHITE = Color3.new(1, 1, 1)
@@ -66,7 +125,6 @@ local function buildDrawingShim()
         [2] = Enum.Font.RobotoMono, [3] = Enum.Font.Code,
     }
 
-    -- objeto Drawing: guarda estado em d, aplica no Instance via set(chave); ignora escrita sem mudanca
     local function proxy(d, set, destroy, extra)
         local alive = true
         return setmetatable({}, {
@@ -147,7 +205,6 @@ local function buildDrawingShim()
             f.BackgroundTransparency = 1 - d.Transparency
         end
         paint()
-        -- o ESP sempre escreve From e depois To: a geometria so e recalculada em To (1 calculo por frame)
         local function set(k)
             if k == "Visible" then f.Visible = d.Visible
             elseif k == "To" or k == "Thickness" then placeLine(f, d.From, d.To, d.Thickness)
@@ -246,7 +303,6 @@ local function buildDrawingShim()
             placeLine(e[3], d.PointC, d.PointA, d.Thickness)
         end
         paint()
-        -- o ESP escreve PointA, PointB e por ultimo PointC
         local function set(k)
             if k == "Visible" then
                 for _, f in ipairs(e) do f.Visible = d.Visible end
@@ -283,7 +339,311 @@ local function drawingWorks()
 end
 
 -- ------------------------------------------------------------
--- Ponte para o chunk do VantaX (prelude injetado no topo do codigo)
+-- MENU LITE (emergencia, sem Slate, sem Drawing): funciona em qualquer executor
+-- ------------------------------------------------------------
+local function buildLite()
+    local lp = Players.LocalPlayer
+    local RunService = game:GetService("RunService")
+    local Lighting = game:GetService("Lighting")
+    local S = { speed = false, jump = false, infjump = false, noclip = false, fly = false, esp = false, fullbright = false }
+    local SPEED, JUMP, FLY = 50, 100, 60
+
+    local function hum()
+        local c = lp.Character
+        return c and c:FindFirstChildOfClass("Humanoid")
+    end
+    local function root()
+        local c = lp.Character
+        return c and c:FindFirstChild("HumanoidRootPart")
+    end
+
+    -- fly
+    local fly = { bv = nil, bg = nil }
+    local function flyOff()
+        if fly.bv then fly.bv:Destroy(); fly.bv = nil end
+        if fly.bg then fly.bg:Destroy(); fly.bg = nil end
+        local h = hum()
+        if h then h.PlatformStand = false end
+    end
+
+    RunService.Heartbeat:Connect(function()
+        local h, r = hum(), root()
+        if not h or not r then return end
+        if S.speed then h.WalkSpeed = SPEED end
+        if S.jump then
+            h.UseJumpPower = true
+            h.JumpPower = JUMP
+        end
+        if S.fly then
+            local cam = workspace.CurrentCamera
+            if not cam then return end
+            if not fly.bv or fly.bv.Parent ~= r then
+                flyOff()
+                fly.bv = Instance.new("BodyVelocity")
+                fly.bv.MaxForce = Vector3.new(1e9, 1e9, 1e9)
+                fly.bv.Velocity = Vector3.zero
+                fly.bv.Parent = r
+                fly.bg = Instance.new("BodyGyro")
+                fly.bg.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
+                fly.bg.P = 9e4
+                fly.bg.Parent = r
+            end
+            h.PlatformStand = true
+            local lv = cam.CFrame:VectorToObjectSpace(h.MoveDirection)
+            local dir = cam.CFrame.LookVector * (-lv.Z) + cam.CFrame.RightVector * lv.X
+            fly.bv.Velocity = dir * FLY
+            fly.bg.CFrame = cam.CFrame
+        end
+    end)
+
+    -- noclip
+    RunService.Stepped:Connect(function()
+        if not S.noclip then return end
+        local c = lp.Character
+        if not c then return end
+        for _, p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end)
+    local function noclipOff()
+        local c = lp.Character
+        if not c then return end
+        for _, n in ipairs({ "HumanoidRootPart", "Head", "Torso", "UpperTorso", "LowerTorso" }) do
+            local p = c:FindFirstChild(n)
+            if p and p:IsA("BasePart") then p.CanCollide = true end
+        end
+    end
+
+    -- pulo infinito
+    UIS.JumpRequest:Connect(function()
+        if S.infjump then
+            local h = hum()
+            if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end)
+
+    -- esp (Highlight)
+    local hls = {}
+    local function espFor(plr)
+        if plr == lp then return end
+        local c = plr.Character
+        if not c then return end
+        local h = hls[plr]
+        if not h or not h.Parent then
+            h = Instance.new("Highlight")
+            h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            h.FillTransparency = 0.75
+            h.FillColor = Color3.fromRGB(170, 70, 255)
+            h.OutlineColor = Color3.fromRGB(170, 70, 255)
+            h.Parent = workspace.CurrentCamera or workspace
+            hls[plr] = h
+        end
+        h.Adornee = c
+    end
+    local function espAll()
+        for _, p in ipairs(Players:GetPlayers()) do pcall(espFor, p) end
+    end
+    local function espOff()
+        for p, h in pairs(hls) do
+            pcall(function() h:Destroy() end)
+            hls[p] = nil
+        end
+    end
+    Players.PlayerRemoving:Connect(function(p)
+        if hls[p] then
+            pcall(function() hls[p]:Destroy() end)
+            hls[p] = nil
+        end
+    end)
+    task.spawn(function()
+        while true do
+            if S.esp then pcall(espAll) end
+            task.wait(1)
+        end
+    end)
+
+    -- fullbright
+    local fbOrig
+    local function fbOn()
+        fbOrig = fbOrig or {
+            Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime,
+            GlobalShadows = Lighting.GlobalShadows, FogEnd = Lighting.FogEnd,
+        }
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 1e6
+    end
+    local function fbOff()
+        if fbOrig then
+            for k, v in pairs(fbOrig) do Lighting[k] = v end
+        end
+    end
+
+    -- interface
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "VX_Lite"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 2147483645
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.fromOffset(190, 0)
+    frame.AutomaticSize = Enum.AutomaticSize.Y
+    frame.Position = UDim2.new(1, -200, 0.5, -170)
+    frame.BackgroundColor3 = Color3.fromRGB(23, 16, 33)
+    frame.BorderSizePixel = 0
+    frame.Visible = false
+    local fc = Instance.new("UICorner")
+    fc.CornerRadius = UDim.new(0, 10)
+    fc.Parent = frame
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, 6)
+    pad.PaddingBottom = UDim.new(0, 6)
+    pad.PaddingLeft = UDim.new(0, 6)
+    pad.PaddingRight = UDim.new(0, 6)
+    pad.Parent = frame
+    local list = Instance.new("UIListLayout")
+    list.SortOrder = Enum.SortOrder.LayoutOrder
+    list.Padding = UDim.new(0, 4)
+    list.Parent = frame
+
+    local order = 0
+    local function nextOrder()
+        order = order + 1
+        return order
+    end
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 24)
+    title.BackgroundTransparency = 1
+    title.Text = "VANTAX LITE"
+    title.TextColor3 = Color3.fromRGB(190, 140, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 15
+    title.LayoutOrder = nextOrder()
+    title.Parent = frame
+
+    local function addToggle(label, key, onChange)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, 0, 0, 34)
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 14
+        b.AutoButtonColor = true
+        b.LayoutOrder = nextOrder()
+        local bc = Instance.new("UICorner")
+        bc.CornerRadius = UDim.new(0, 8)
+        bc.Parent = b
+        local function refresh()
+            b.Text = label .. ": " .. (S[key] and "ON" or "OFF")
+            b.BackgroundColor3 = S[key] and Color3.fromRGB(110, 60, 190) or Color3.fromRGB(36, 24, 52)
+        end
+        refresh()
+        b.Activated:Connect(function()
+            S[key] = not S[key]
+            pcall(onChange, S[key])
+            refresh()
+        end)
+        b.Parent = frame
+    end
+
+    addToggle("Speed", "speed", function(v)
+        if not v then
+            local h = hum()
+            if h then h.WalkSpeed = 16 end
+        end
+    end)
+    addToggle("Jump", "jump", function(v)
+        if not v then
+            local h = hum()
+            if h then h.JumpPower = 50 end
+        end
+    end)
+    addToggle("Pulo infinito", "infjump", function() end)
+    addToggle("Noclip", "noclip", function(v) if not v then noclipOff() end end)
+    addToggle("Fly", "fly", function(v) if not v then flyOff() end end)
+    addToggle("ESP", "esp", function(v)
+        if v then espAll() else espOff() end
+    end)
+    addToggle("Fullbright", "fullbright", function(v)
+        if v then fbOn() else fbOff() end
+    end)
+
+    mount(gui, true)
+    frame.Parent = gui
+
+    local api = {}
+    function api.show(v) frame.Visible = v == true end
+    function api.toggle() frame.Visible = not frame.Visible end
+    return api
+end
+
+local lite
+local function openLite()
+    if not lite then
+        local ok, res = pcall(buildLite)
+        if ok then
+            lite = res
+        else
+            say("ERRO no menu lite: " .. tostring(res):sub(1, 200))
+        end
+    end
+    return lite
+end
+
+local function addDock(w)
+    pcall(function()
+        local g = Instance.new("ScreenGui")
+        g.Name = "VX_Dock"
+        g.ResetOnSpawn = false
+        g.IgnoreGuiInset = true
+        g.DisplayOrder = 2147483644
+        local function btn(label, y, cb)
+            local b = Instance.new("TextButton")
+            b.Size = UDim2.fromOffset(44, 44)
+            b.Position = UDim2.new(0, 6, 0.5, y)
+            b.BackgroundColor3 = Color3.fromRGB(110, 60, 190)
+            b.TextColor3 = Color3.new(1, 1, 1)
+            b.Font = Enum.Font.GothamBold
+            b.TextSize = 14
+            b.Text = label
+            local c = Instance.new("UICorner")
+            c.CornerRadius = UDim.new(0, 8)
+            c.Parent = b
+            b.Activated:Connect(function() pcall(cb) end)
+            b.Parent = g
+        end
+        local shown = true
+        if w then
+            btn("VX", -50, function()
+                shown = not shown
+                w:SetVisible(shown)
+            end)
+        end
+        btn("LT", 4, function()
+            local l = openLite()
+            if l then l.toggle() end
+        end)
+        mount(g, true)
+    end)
+end
+
+local function fail(msg)
+    say("FALHA: " .. tostring(msg):sub(1, 300))
+    pcall(function()
+        if env.__VORTEX_HUB_CLEANUP then env.__VORTEX_HUB_CLEANUP() end
+    end)
+    local l = openLite()
+    if l then
+        l.show(true)
+        say("menu LITE aberto. Toque no log para fechar.")
+    end
+    addDock(nil)
+end
+
+-- ------------------------------------------------------------
+-- Ponte para o chunk do VantaX (prelude injetado no topo)
 -- ------------------------------------------------------------
 local compat = { http = httpGet }
 env.__VX_COMPAT = compat
@@ -301,33 +661,24 @@ if not drawingWorks() then
         drawMode = "fallback (Instances)"
     else
         drawMode = "INDISPONIVEL"
-        bad("Drawing indisponivel e o fallback falhou:", tostring(D))
     end
 end
 
--- ------------------------------------------------------------
--- Relatorio de capacidades do executor
--- ------------------------------------------------------------
 local silentOk = has("hookmetamethod") and has("getnamecallmethod")
 local plat = "?"
 pcall(function() plat = tostring(UIS:GetPlatform()):gsub("Enum.Platform.", "") end)
-log(("plataforma=%s | touch=%s | teclado=%s"):format(plat, tostring(UIS.TouchEnabled), tostring(UIS.KeyboardEnabled)))
-log("Drawing:", drawMode)
-log("Silent Aim:", silentOk and "ok" or "INDISPONIVEL (falta hookmetamethod/getnamecallmethod no executor)")
-log("newcclosure:", tostring(has("newcclosure")), "| checkcaller:", tostring(has("checkcaller")),
-    "| gethui:", tostring(has("gethui")), "| firesignal:", tostring(has("firesignal")))
+say("2/6 plataforma=" .. plat .. " touch=" .. tostring(UIS.TouchEnabled))
+say("3/6 Drawing: " .. drawMode .. " | Silent Aim: " .. (silentOk and "ok" or "INDISPONIVEL"))
 
 -- ------------------------------------------------------------
 -- Patches no codigo do VantaX (em memoria)
 -- ------------------------------------------------------------
 local PATCHES = {
     {
-        name = "HttpGet com fallback (Slate + server hop)",
+        name = "HttpGet com fallback",
         old = "game:HttpGet(", new = "__VX_HTTP(", all = true,
     },
     {
-        -- o wall-check do aimbot/silent chamava workspace:Raycast (namecall) e podia cair no proprio hook do
-        -- silent aim; chamada com ponto nao passa pelo __namecall
         name = "wall-check fora do hook do silent aim",
         old = "workspace:Raycast(ca,bi.Position-ca,eq)",
         new = "workspace.Raycast(workspace,ca,bi.Position-ca,eq)",
@@ -349,9 +700,10 @@ local function replacePlain(src, old, new, all)
     return table.concat(out), n
 end
 
+say("4/6 baixando o VantaX...")
 local okFetch, src = pcall(httpGet, SRC_URL)
 if not okFetch then
-    bad("nao consegui baixar o VantaX:", tostring(src))
+    fail("download do VantaX: " .. tostring(src))
     return
 end
 
@@ -359,35 +711,41 @@ local patched = src
 for _, p in ipairs(PATCHES) do
     local out, n = replacePlain(patched, p.old, p.new, p.all)
     if n == 0 then
-        bad("patch NAO aplicado (trecho nao encontrado):", p.name)
+        say("patch NAO aplicado: " .. p.name)
     else
         patched = out
-        log("patch ok:", p.name, "x" .. n)
     end
 end
 
 local chunk, err = loadstring(PRELUDE .. patched, "=VantaX")
 if not chunk then
-    bad("versao corrigida nao compilou, usando a original:", tostring(err))
+    say("versao corrigida nao compilou, usando a original")
     chunk, err = loadstring(PRELUDE .. src, "=VantaX")
 end
 if not chunk then
-    bad("falha ao compilar o VantaX:", tostring(err))
+    fail("compilar o VantaX: " .. tostring(err))
     return
 end
 
+say("5/6 executando o VantaX...")
 local okRun, runErr = xpcall(chunk, function(e) return debug.traceback(tostring(e), 2) end)
 if not okRun then
-    bad("erro ao executar o VantaX:\n" .. tostring(runErr))
+    fail("executar o VantaX: " .. tostring(runErr))
+    return
+end
+
+local w = env.__VORTEX_HUB_WINDOW
+if not w then
+    fail("o VantaX rodou mas nao criou a janela (Slate nao carregou?)")
     return
 end
 
 if SHOW_MENU_ON_LOAD then
-    task.delay(0.5, function()
-        local w = env.__VORTEX_HUB_WINDOW
-        if w then pcall(function() w:SetVisible(true) end) end
-    end)
+    task.delay(0.5, function() pcall(function() w:SetVisible(true) end) end)
 end
+addDock(w)
+say("6/6 VantaX carregou. VX = abre/fecha o menu | LT = menu lite")
+task.delay(25, hideLog)
 
 pcall(function()
     StarterGui:SetCore("SendNotification", {
