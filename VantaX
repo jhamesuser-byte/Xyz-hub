@@ -41,7 +41,8 @@ local S = {
     speed = false, speedVal = 30, jump = false, jumpVal = 80, infjump = false,
     noclip = false, fly = false, flySpeed = 60,
     -- farm
-    coins = false, coinSpeed = 28, gun = false,
+    coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60,
+    gun = false, gunMode = "Touch",
     -- misc
     antiafk = true,
 }
@@ -142,7 +143,11 @@ local function partOf(char, key)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
+-- set by "Shoot Murderer": forces the target role regardless of the Target setting
+local FORCE = { role = nil }
+
 local function wantRole(role, myRole)
+    if FORCE.role then return role == FORCE.role end
     local a = S.target
     if a == "All" then return true end
     if a == "Murderer" then return role == "Murderer" end
@@ -334,16 +339,21 @@ end
 
 local function computeSilent()
     SIL.lock = false
-    SIL.mode = S.silentMode
-    SIL.hit = S.silentHit
-    if not S.silent then return end
+    SIL.mode = FORCE.role and "All" or S.silentMode
+    SIL.hit = FORCE.role and 100 or S.silentHit
+    if not (S.silent or FORCE.role) then return end
     local cam = workspace.CurrentCamera
     local char, hum, root = myParts()
     if not cam or not char or not hum or hum.Health <= 0 then return end
-    if S.silentNeedTool and not char:FindFirstChildOfClass("Tool") then return end
+    if S.silentNeedTool and not FORCE.role and not char:FindFirstChildOfClass("Tool") then return end
     SIL.camPos = cam.CFrame.Position
     SIL.rootPos = root and root.Position or SIL.camPos
-    local part, pos = pickTarget(S.silentFov, S.maxDist, S.silentPart, S.silentWall, S.silentPredict)
+    local part, pos
+    if FORCE.role then
+        part, pos = pickTarget(5000, 5000, "Torso", false, 0)
+    else
+        part, pos = pickTarget(S.silentFov, S.maxDist, S.silentPart, S.silentWall, S.silentPredict)
+    end
     if part then
         SIL.lock = true
         SIL.pos = pos
@@ -548,12 +558,13 @@ end))
 -- Action functions
 -- ------------------------------------------------------------
 local curTween
+local coinTries = setmetatable({}, { __mode = "k" })   -- coins we already visited (skipped after 3 tries, e.g. bag full)
 local function nearestCoin(root)
     local container = coinContainer()
     if not container then return nil, math.huge end
     local best, bd = nil, math.huge
     for _, c in ipairs(container:GetDescendants()) do
-        if c:IsA("BasePart") and c.Name == "Coin_Server" then
+        if c:IsA("BasePart") and c.Name == "Coin_Server" and (coinTries[c] or 0) < 3 then
             local d = (c.Position - root.Position).Magnitude
             if d < bd then best, bd = c, d end
         end
@@ -575,6 +586,87 @@ local function tpToRole(roleName)
         end
     end
     notify(roleName .. " not found")
+end
+
+-- Grab the dropped gun. "Touch" = fires the touch from where you stand (no teleport).
+-- "Teleport" = quick hop to the gun and straight back.
+local grabbing = false
+local function grabGun(manual)
+    if grabbing then return false end
+    local _, hum, root = myParts()
+    if not root or not hum or hum.Health <= 0 then return false end
+    if hasTool(lp, "Gun") or hasTool(lp, "Knife") then
+        if manual then notify("You already have a weapon") end
+        return false
+    end
+    local drop = workspace:FindFirstChild("GunDrop")
+    local part = drop and (drop:IsA("BasePart") and drop or drop:FindFirstChildWhichIsA("BasePart", true))
+    if not part then
+        if manual then notify("No dropped gun on the map") end
+        return false
+    end
+    grabbing = true
+    if touch then
+        pcall(touch, root, part, 0)
+        pcall(touch, root, part, 1)
+        task.wait(0.12)
+    elseif S.gunMode == "Touch" and manual then
+        notify("Your executor has no firetouchinterest: set Grab Mode to Teleport")
+    end
+    if S.gunMode == "Teleport" and not hasTool(lp, "Gun") and root.Parent and part.Parent then
+        local back = root.CFrame
+        root.CFrame = part.CFrame
+        task.wait(0.1)
+        if touch then
+            pcall(touch, root, part, 0)
+            pcall(touch, root, part, 1)
+        end
+        task.wait(0.1)
+        if root.Parent then
+            root.CFrame = back
+            root.AssemblyLinearVelocity = Vector3.zero
+        end
+    end
+    grabbing = false
+    local ok = hasTool(lp, "Gun")
+    if ok then notify("Gun grabbed") end
+    return ok
+end
+
+-- Sheriff only: equips the gun, aims at the murderer and fires one shot.
+local shooting = false
+local function shootMurderer()
+    if shooting then return end
+    if roleOf(lp) ~= "Sheriff" then notify("You are not the Sheriff"); return end
+    local mchar
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp and roleOf(plr) == "Murderer" then mchar = plr.Character break end
+    end
+    local mhum = mchar and mchar:FindFirstChildOfClass("Humanoid")
+    if not mchar or not mhum or mhum.Health <= 0 then notify("Murderer not found"); return end
+    if not installHooks(true) then notify("Shoot Murderer needs hookmetamethod (not available)"); return end
+    local gun = equip("Gun")
+    if not gun then notify("Gun not found"); return end
+    shooting = true
+    task.spawn(function()
+        FORCE.role = "Murderer"
+        local t0, fired = os.clock(), false
+        while alive and os.clock() - t0 < 1.5 do
+            local cam = workspace.CurrentCamera
+            local part = mchar:FindFirstChild("UpperTorso") or mchar:FindFirstChild("Torso") or mchar:FindFirstChild("HumanoidRootPart")
+            if not cam or not part or not part.Parent then break end
+            cam.CFrame = CFrame.lookAt(cam.CFrame.Position, part.Position)
+            if SIL.lock and not fired then
+                fired = true
+                pcall(function() gun:Activate() end)
+                task.wait(0.35)
+                break
+            end
+            task.wait(0.03)
+        end
+        FORCE.role = nil
+        shooting = false
+    end)
 end
 
 local function serverHop()
@@ -616,22 +708,34 @@ end
 
 -- ------------------------------------------------------------
 -- Menu spec (used by Slate AND by the simple menu)
+-- label  : { "label", text }
 -- toggle : { "toggle", name, key, callback }
 -- drop   : { "drop",   name, key, options, callback }
 -- slider : { "slider", name, key, min, max, step, callback }
 -- button : { "button", name, callback }
 -- ------------------------------------------------------------
 local UI = {
+    { tab = "Main", icon = "star", sections = {
+        { name = "Round Info", items = {
+            { "label", "Murderer: ?\nSheriff: ?\nYour role: ?" },
+        } },
+        { name = "Quick Actions", items = {
+            { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
+            { "button", "Shoot Murderer", shootMurderer },
+            { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
+            { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
+        } },
+    } },
     { tab = "Combat", icon = "crosshair", sections = {
         { name = "Aimbot", items = {
             { "toggle", "Aimbot", "aimbot" },
-            { "drop", "Mode", "aimMode", { "Legit", "Rage" } },
-            { "drop", "Aim part", "aimPart", { "Head", "Torso" } },
-            { "slider", "FOV", "aimFov", 20, 600, 10 },
-            { "slider", "Speed", "aimSpeed", 1, 100, 5 },
+            { "drop", "Aimbot Mode", "aimMode", { "Legit", "Rage" } },
+            { "drop", "Aim Part", "aimPart", { "Head", "Torso" } },
+            { "slider", "Aimbot FOV", "aimFov", 20, 600, 10 },
+            { "slider", "Aimbot Speed", "aimSpeed", 1, 100, 5 },
             { "slider", "Prediction (ms)", "aimPredict", 0, 200, 10 },
-            { "toggle", "Wall check", "aimWall" },
-            { "toggle", "Show FOV circle", "aimShowFov" },
+            { "toggle", "Wall Check", "aimWall" },
+            { "toggle", "Show FOV Circle", "aimShowFov" },
         } },
         { name = "Silent Aim", items = {
             { "toggle", "Silent Aim", "silent", function(v)
@@ -640,86 +744,87 @@ local UI = {
                     notify("Silent Aim unavailable: your executor has no hookmetamethod")
                 end
             end },
-            { "drop", "Method", "silentMode", { "Raycast", "Mouse", "Remote", "All" }, function()
+            { "drop", "Silent Aim Method", "silentMode", { "Raycast", "Mouse", "Remote", "All" }, function()
                 if S.silent then ensureHooks() end
             end },
-            { "drop", "Aim part", "silentPart", { "Head", "Torso" } },
-            { "slider", "FOV", "silentFov", 20, 600, 10 },
-            { "slider", "Hit chance %", "silentHit", 1, 100, 5 },
-            { "toggle", "Wall check", "silentWall" },
-            { "toggle", "Show FOV circle", "silentShowFov" },
+            { "drop", "Aim Part", "silentPart", { "Head", "Torso" } },
+            { "slider", "Silent Aim FOV", "silentFov", 20, 600, 10 },
+            { "slider", "Hit Chance (%)", "silentHit", 1, 100, 5 },
+            { "toggle", "Wall Check", "silentWall" },
+            { "toggle", "Show FOV Circle", "silentShowFov" },
         } },
         { name = "Targeting", items = {
             { "drop", "Target", "target", { "Auto", "Murderer", "Sheriff", "All" } },
             { "drop", "Priority", "prio", { "Center", "Closest" } },
-            { "slider", "Max distance", "maxDist", 50, 1500, 50 },
+            { "slider", "Max Distance", "maxDist", 50, 1500, 50 },
         } },
         { name = "Weapons", items = {
-            { "toggle", "Auto shoot (Sheriff)", "autoShoot" },
-            { "toggle", "Auto equip", "autoEquip" },
-            { "toggle", "Kill aura (Murderer)", "aura" },
-            { "slider", "Aura range", "auraRange", 5, 80, 3 },
-            { "toggle", "Aura teleport", "auraTp" },
+            { "toggle", "Auto Shoot", "autoShoot" },
+            { "toggle", "Auto Equip", "autoEquip" },
+            { "toggle", "Kill Aura", "aura" },
+            { "slider", "Kill Aura Range", "auraRange", 5, 80, 3 },
+            { "toggle", "Kill Aura Teleport", "auraTp" },
         } },
     } },
-    { tab = "Visual", icon = "eye", sections = {
+    { tab = "ESP", icon = "eye", sections = {
         { name = "ESP", items = {
-            { "toggle", "Role ESP", "esp", function(v)
+            { "toggle", "Player ESP", "esp", function(v)
                 if not v then clearAll() end
             end },
-            { "toggle", "Name labels", "labels" },
-            { "toggle", "Distance", "dist" },
+            { "toggle", "Show Names", "labels" },
+            { "toggle", "Show Distance", "dist" },
             { "toggle", "Coin ESP", "coinEsp" },
-            { "toggle", "Dropped gun ESP", "gunEsp" },
-            { "toggle", "Role notifications", "notify" },
+            { "toggle", "Gun ESP", "gunEsp" },
+            { "toggle", "Role Notifier", "notify" },
         } },
         { name = "World", items = {
             { "toggle", "Fullbright", "fullbright", function() applyLighting() end },
-            { "toggle", "Camera FOV", "fovOn" },
-            { "slider", "FOV value", "fov", 30, 120, 5 },
+            { "toggle", "Custom FOV", "fovOn" },
+            { "slider", "FOV Amount", "fov", 30, 120, 5 },
         } },
     } },
-    { tab = "Movement", icon = "user", sections = {
+    { tab = "Farm", icon = "coins", sections = {
+        { name = "Coins", items = {
+            { "toggle", "Auto Farm Coins", "coins", function(v)
+                if not v and curTween then curTween:Cancel() end
+            end },
+            { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween" } },
+            { "slider", "Farm Delay (ms)", "coinDelay", 40, 500, 10 },
+            { "slider", "Tween Speed", "coinSpeed", 20, 120, 5 },
+        } },
+        { name = "Gun", items = {
+            { "toggle", "Auto Grab Gun", "gun" },
+            { "drop", "Grab Mode", "gunMode", { "Touch", "Teleport" } },
+        } },
+    } },
+    { tab = "Player", icon = "user", sections = {
         { name = "Movement", items = {
-            { "toggle", "Speed", "speed", function(v)
+            { "toggle", "WalkSpeed", "speed", function(v)
                 if not v then
                     local _, hum = myParts()
                     if hum then hum.WalkSpeed = 16 end
                 end
             end },
-            { "slider", "Walk speed", "speedVal", 16, 120, 4 },
-            { "toggle", "Jump", "jump", function(v)
+            { "slider", "WalkSpeed Value", "speedVal", 16, 120, 4 },
+            { "toggle", "JumpPower", "jump", function(v)
                 if not v then
                     local _, hum = myParts()
                     if hum then hum.JumpPower = 50 end
                 end
             end },
-            { "slider", "Jump power", "jumpVal", 50, 200, 10 },
-            { "toggle", "Infinite jump", "infjump" },
+            { "slider", "JumpPower Value", "jumpVal", 50, 200, 10 },
+            { "toggle", "Infinite Jump", "infjump" },
             { "toggle", "Noclip", "noclip" },
             { "toggle", "Fly", "fly" },
-            { "slider", "Fly speed", "flySpeed", 20, 150, 10 },
-        } },
-        { name = "Teleport", items = {
-            { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
-            { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
-        } },
-    } },
-    { tab = "Farm", icon = "coins", sections = {
-        { name = "Coins & Gun", items = {
-            { "toggle", "Auto coins", "coins", function(v)
-                if not v and curTween then curTween:Cancel() end
-            end },
-            { "slider", "Coin speed", "coinSpeed", 15, 60, 3 },
-            { "toggle", "Grab dropped gun", "gun" },
+            { "slider", "Fly Speed", "flySpeed", 20, 150, 10 },
         } },
     } },
     { tab = "Misc", icon = "wrench", sections = {
         { name = "Utilities", items = {
             { "toggle", "Anti-AFK", "antiafk" },
             { "button", "Rejoin", rejoin },
-            { "button", "Server hop", serverHop },
-            { "button", "Unload script", function()
+            { "button", "Server Hop", serverHop },
+            { "button", "Unload Script", function()
                 if env.__MM2_CLEANUP then env.__MM2_CLEANUP() end
             end },
         } },
@@ -805,6 +910,9 @@ local function buildSlate()
                             elseif kind == "button" then
                                 local cb = it[3]
                                 section:Button({ Name = it[2], Callback = function() pcall(cb) end })
+                            elseif kind == "label" then
+                                local lbl = section:Label({ Name = it[2] })
+                                setInfo = function(text) pcall(function() lbl:Set(text, true) end) end
                             end
                         end)
                         if okI then created = created + 1 end
@@ -1247,7 +1355,7 @@ task.spawn(function()
     end
 end)
 
--- auto coins (tween to the nearest coin)
+-- auto farm coins (Teleport = instant hop to each coin, Tween = smooth move)
 task.spawn(function()
     while alive do
         if S.coins then
@@ -1255,48 +1363,41 @@ task.spawn(function()
             if root and hum and hum.Health > 0 then
                 local coin, dist = nearestCoin(root)
                 if coin and coin.Parent then
-                    local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
-                    curTween = TweenService:Create(root,
-                        TweenInfo.new(math.max(dist / S.coinSpeed, 0.1), Enum.EasingStyle.Linear),
-                        { CFrame = goal })
-                    curTween:Play()
-                    curTween.Completed:Wait()
-                    curTween = nil
+                    coinTries[coin] = (coinTries[coin] or 0) + 1
+                    if S.coinMode == "Tween" then
+                        local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
+                        curTween = TweenService:Create(root,
+                            TweenInfo.new(math.max(dist / S.coinSpeed, 0.05), Enum.EasingStyle.Linear),
+                            { CFrame = goal })
+                        curTween:Play()
+                        curTween.Completed:Wait()
+                        curTween = nil
+                    else
+                        root.CFrame = CFrame.new(coin.Position) * root.CFrame.Rotation
+                        root.AssemblyLinearVelocity = Vector3.zero
+                    end
                     if touch and coin.Parent then
                         pcall(touch, root, coin, 0)
                         pcall(touch, root, coin, 1)
                     end
-                    task.wait(0.15)
+                    task.wait(S.coinDelay / 1000)
                 else
-                    task.wait(0.5)
+                    task.wait(0.3)
                 end
             else
                 task.wait(0.5)
             end
         else
-            task.wait(0.3)
+            task.wait(0.2)
         end
     end
 end)
 
--- grab dropped gun (appears when the sheriff dies)
+-- auto grab gun (the gun drops when the sheriff dies)
 task.spawn(function()
     while alive do
-        if S.gun and not hasTool(lp, "Gun") and not hasTool(lp, "Knife") then
-            local drop = workspace:FindFirstChild("GunDrop")
-            local _, hum, root = myParts()
-            if drop and drop:IsA("BasePart") and root and hum and hum.Health > 0 then
-                local back = root.CFrame
-                root.CFrame = drop.CFrame
-                if touch then
-                    pcall(touch, root, drop, 0)
-                    pcall(touch, root, drop, 1)
-                end
-                task.wait(0.4)
-                if root.Parent then root.CFrame = back end
-            end
-        end
-        task.wait(0.5)
+        if S.gun then pcall(grabGun, false) end
+        task.wait(0.25)
     end
 end)
 
@@ -1393,7 +1494,8 @@ env.__MM2_CLEANUP = function()
     alive = false
     S.silent = false
     SIL.lock = false
-    S.speed, S.jump, S.fly, S.noclip, S.coins = false, false, false, false, false
+    S.speed, S.jump, S.fly, S.noclip, S.coins, S.gun = false, false, false, false, false, false
+    FORCE.role = nil
     S.fullbright, S.nofog = false, false
     if curTween then pcall(function() curTween:Cancel() end) end
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
