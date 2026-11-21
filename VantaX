@@ -43,7 +43,7 @@ local S = {
     -- fling
     flingTime = 3, loopMurd = false, loopSher = false, flingPick = "",
     -- misc
-    antiafk = true, knifeButton = false,
+    antiafk = true, quickButton = false,
 }
 
 local CFG = {
@@ -162,29 +162,16 @@ local function partOf(char, key)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
--- set by Auto Shoot while a shot is held: forces the target role regardless of the Target setting
+-- set by "Shoot Murderer": forces the target role regardless of the Target setting
 local FORCE = { role = nil, target = nil, part = nil }   -- target: part the camera is held on during a forced shot; part: fixed aim part
 
--- Auto Shoot state (Sheriff). active = a gun shot is being held, fireAt = when the trigger is pulled,
--- endAt = when the forced aim is released, nextShot = earliest time of the next shot,
--- equipped = the gun this option took out by itself (only that one is put back), lastSeen = last time the
--- murderer was inside the FOV, readyAt = earliest time a freshly equipped gun may fire
-local AUTO = { active = false, fireAt = nil, endAt = 0, nextShot = 0, lastEquip = 0, lastSeen = 0, readyAt = 0,
-    equipped = nil }
+-- Auto Shoot state (sheriff). active = a shot is being held, fireAt = when the trigger is pulled,
+-- endAt = when the forced aim is released, nextShot = earliest time of the next shot
+local AUTO = { active = false, fireAt = nil, endAt = 0, nextShot = 0, lastEquip = 0 }
 
 local function endAutoShot()
     AUTO.active, AUTO.fireAt = false, nil
     FORCE.role, FORCE.part, FORCE.target = nil, nil, nil
-end
-
--- puts back the gun Auto Shoot took out by itself (a gun you equipped yourself stays in hand)
-local function releaseAutoWeapon()
-    local tool = AUTO.equipped
-    AUTO.equipped = nil
-    local char, hum = myParts()
-    if tool and char and hum and tool.Parent == char then
-        pcall(function() hum:UnequipTools() end)
-    end
 end
 
 local function wantRole(role, myRole)
@@ -285,6 +272,7 @@ local SIL = {
     lock = false, pos = Vector3.zero, part = nil, mode = "All", hit = 100,
     camPos = Vector3.zero, rootPos = Vector3.zero, mouse = nil, cam = nil,
     held = nil, forced = false, shotUntil = 0,
+    learnThrow = false, throwSeen = nil, throwByName = false,   -- Throw Knife: the game's own throw call, recorded
 }
 pcall(function() SIL.mouse = lp:GetMouse() end)
 env.__MM2_SIL = nil    -- hooks left over from older versions read this key: they become pass-through
@@ -296,7 +284,7 @@ end
 
 -- Silent Aim must not touch anything between shots (camera occlusion, movement and UI scripts use the same
 -- calls). The hooks act only inside a short window opened by a click/tap or a tool activation, or during a
--- forced shot (Auto Shoot).
+-- forced shot (Shoot Murderer / Auto Shoot / on-screen button).
 function SIL.active()
     return SIL.forced or os.clock() < SIL.shotUntil
 end
@@ -372,6 +360,26 @@ function SIL.remote(remote, ...)
     return nil
 end
 
+-- True when the remote sits inside the Knife tool and looks like the throw: its name contains "throw"
+-- (second result true), or it carries a position argument (second result false).
+function SIL.isKnifeThrow(remote, ...)
+    local p, inKnife = remote, false
+    for _ = 1, 5 do
+        p = p and p.Parent
+        if p and p.Name == "Knife" then
+            inKnife = true
+            break
+        end
+    end
+    if not inKnife then return false end
+    if string.find(string.lower(remote.Name), "throw", 1, true) then return true, true end
+    for i = 1, select("#", ...) do
+        local t = typeof((select(i, ...)))
+        if t == "CFrame" or t == "Vector3" then return true, false end
+    end
+    return false
+end
+
 local function ours()
     return typeof(checkcaller) == "function" and checkcaller()
 end
@@ -388,6 +396,14 @@ local function installHooks()
         old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
             local m = getnamecallmethod()
             local st = env.__MM2_SIL3
+            if st and st.learnThrow and (m == "FireServer" or m == "InvokeServer") then
+                local isThrow, byName = st.isKnifeThrow(self, ...)
+                if isThrow and (byName or not st.throwByName) and not ours() then
+                    st.throwSeen = table.pack(self, m, ...)   -- remote, method, then the arguments
+                    st.throwByName = byName
+                end
+                if typeof(setnamecallmethod) == "function" then setnamecallmethod(m) end
+            end
             if st and st.lock and st.active() and not ours() then
                 if self == workspace then
                     if m == "Raycast" then
@@ -826,71 +842,18 @@ local function tpToRole(roleName)
     notify(roleName .. " not found")
 end
 
--- Auto Grab Gun must stop for good once you are dead. After dying you respawn in the lobby, where the old
--- drop is out of reach, and the loop would keep hopping at it. DEATH.block is set when your humanoid dies and
--- stays on until the round you died in is over: the murderer's knife is a different one (new round) or nobody
--- holds a Knife or Gun any more. Holding a weapon yourself, or switching Auto Grab Gun off and on, also clears it.
--- NOT VERIFIED in the real game: it assumes the round's weapons disappear (or are new Tool instances) between rounds.
-local DEATH = { block = false, knife = nil }
-
-local function otherWeapon(name)
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= lp then
-            local c = plr.Character
-            local bp = plr:FindFirstChildOfClass("Backpack")
-            local t = (c and c:FindFirstChild(name)) or (bp and bp:FindFirstChild(name))
-            if t then return t end
-        end
-    end
-    return nil
-end
-
-local function markDead()
-    if DEATH.block then return end
-    DEATH.block = true
-    DEATH.knife = otherWeapon("Knife")
-end
-
-local function deathBlocked()
-    if not DEATH.block then return false end
-    local over = hasTool(lp, "Gun") or hasTool(lp, "Knife")
-    if not over then
-        local knife = otherWeapon("Knife")
-        over = (knife ~= nil and knife ~= DEATH.knife) or (knife == nil and otherWeapon("Gun") == nil)
-    end
-    if over then
-        DEATH.block, DEATH.knife = false, nil
-        return false
-    end
-    return true
-end
-
-local function watchDeath(char)
-    if not char then return end
-    task.spawn(function()
-        local hum = char:FindFirstChildOfClass("Humanoid") or char:WaitForChild("Humanoid", 5)
-        if hum then track(hum.Died:Connect(markDead)) end
-    end)
-end
-watchDeath(lp.Character)
-track(lp.CharacterAdded:Connect(watchDeath))
-
--- Grab the dropped gun. Grab Gun, instant: 1) fire a touch on the drop from where you stand (no movement);
--- 2) if the gun is still not yours after a moment, hop onto it, wait for the pickup and go straight back to
--- where you were. Auto mode (manual = false) never runs while DEATH.block is on, and any attempt in progress
--- is dropped the moment you die, respawn or unload the script.
+-- Grab the dropped gun. "Touch" = fires the touch from where you stand (no teleport).
+-- "Teleport" = quick hop to the gun and straight back.
 local grabbing = false
+-- Grab Gun, instant: 1) fire a touch on the drop from where you stand (no movement); 2) if the gun is still
+-- not yours after a moment, hop onto it, wait for the pickup and go straight back to where you were.
 local lastGrabFail = 0
 
 local function grabGun(manual)
     if grabbing then return false end
-    if not manual and (os.clock() - lastGrabFail < 1.5 or deathBlocked()) then return false end
-    local char, hum, root = myParts()
-    if not root or not hum then return false end
-    if hum.Health <= 0 then
-        if not manual then markDead() end
-        return false
-    end
+    if not manual and os.clock() - lastGrabFail < 1.5 then return false end
+    local _, hum, root = myParts()
+    if not root or not hum or hum.Health <= 0 then return false end
     if hasTool(lp, "Gun") or hasTool(lp, "Knife") then
         if manual then notify("You already have a weapon") end
         return false
@@ -905,22 +868,19 @@ local function grabGun(manual)
     end
     grabbing = true
     local function got() return hasTool(lp, "Gun") end
-    -- still the same living character (false as soon as you die or respawn)
-    local function sameLife() return lp.Character == char and hum.Health > 0 and root.Parent ~= nil end
-    local function stillAlive() return alive and sameLife() end
     local back
     pcall(function()
         if touch then
             pcall(touch, root, part, 0)
             pcall(touch, root, part, 1)
             local t0 = os.clock()
-            while stillAlive() and not got() and part.Parent and os.clock() - t0 < 0.25 do task.wait(0.03) end
+            while alive and not got() and part.Parent and os.clock() - t0 < 0.25 do task.wait(0.03) end
         end
-        if stillAlive() and not got() and part.Parent then
+        if alive and not got() and part.Parent and root.Parent and hum.Health > 0 then
             back = root.CFrame
             root.CFrame = part.CFrame
             local t0 = os.clock()
-            while stillAlive() and not got() and part.Parent and os.clock() - t0 < 1 do
+            while alive and not got() and part.Parent and os.clock() - t0 < 1 do
                 if touch then
                     pcall(touch, root, part, 0)
                     pcall(touch, root, part, 1)
@@ -929,15 +889,11 @@ local function grabGun(manual)
             end
         end
     end)
-    if back and sameLife() then   -- always return, even if something above failed, but never move a body that died
+    if back and root.Parent then   -- always return, even if something above failed
         root.CFrame = back
         root.AssemblyLinearVelocity = Vector3.zero
     end
     grabbing = false
-    if hum.Health <= 0 then   -- died during the attempt: stay silent, Auto Grab Gun is blocked from now on
-        markDead()
-        return false
-    end
     local ok = got()
     if ok then
         notify("Gun grabbed")
@@ -948,78 +904,226 @@ local function grabGun(manual)
     return ok
 end
 
--- Fires the knife's own "Throw" RemoteEvent with (origin CFrame, target CFrame), the argument shape the Silent
--- Aim remote hook already assumes. The knife has to be in hand already.
--- NOT VERIFIED against the real game: if nothing happens, the notification lists the knife's remotes so the
--- call can be corrected.
-local function throwKnifeAt(knife, part)
-    local _, _, root = myParts()
-    if not (root and knife.Parent == lp.Character and part.Parent) then return false end
-    local remote
-    for _, d in ipairs(knife:GetDescendants()) do
-        if d:IsA("RemoteEvent") and d.Name == "Throw" then
-            remote = d
-            break
+local function findMurderer()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp and roleOf(plr) == "Murderer" then
+            local char = plr.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if char and hum and hum.Health > 0 then return char end
         end
     end
-    if not remote then
-        local names = {}
-        for _, d in ipairs(knife:GetDescendants()) do
-            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then names[#names + 1] = d.Name end
-        end
-        notify("Throw remote not found. Knife remotes: " .. (#names > 0 and table.concat(names, ", ") or "none"))
-        return false
-    end
-    local handle = knife:FindFirstChild("Handle")
-    local origin = (handle and handle:IsA("BasePart")) and handle.Position or root.Position
-    remote:FireServer(CFrame.new(origin), CFrame.new(part.Position))
-    return true
-end
-
--- Throw Knife button (Murderer): throws the knife at whoever is inside the Silent Aim FOV circle (same FOV,
--- target part and line-of-sight rule as Silent Aim; every other player counts as a target). The knife is taken
--- out only when there is a target, and the target is picked again once the knife is in hand, so the throw uses
--- his position at that moment. The knife stays in hand afterwards.
-local knifeBusy = false
-local function pickKnifeTarget()
-    FORCE.role = "Any"
-    local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
-    FORCE.role = nil
-    if ok then return part end
     return nil
 end
 
-local function throwKnifeInFov()
-    if knifeBusy then return false end
+-- Sheriff only: equips the gun, aims at the murderer and fires one shot (the Silent Aim hooks
+-- are forced onto the murderer for the duration of the shot, whatever the Silent Aim toggle says).
+-- Returns true when a shot was started. auto = called by Auto Shoot, so no notifications.
+local shooting = false
+local warnedNoHooks = false
+local function shootMurderer(auto)
+    if shooting or AUTO.active then return false end
+    local function fail(msg)
+        if not auto then notify(msg) end
+        return false
+    end
+    if roleOf(lp) ~= "Sheriff" then return fail("You are not the Sheriff") end
+    local mchar = findMurderer()
+    if not mchar then return fail("Murderer not found") end
+    local hooked = installHooks()
+    if not hooked and (not auto or not warnedNoHooks) then
+        warnedNoHooks = true
+        notify("No hookmetamethod: the shot will only aim the camera at the murderer")
+    end
+    local char0 = lp.Character
+    local wasHeld = char0 ~= nil and char0:FindFirstChild("Gun") ~= nil
+    local gun = equip("Gun")
+    if not gun then return fail("Gun not found") end
+    shooting = true
+    task.spawn(function()
+        FORCE.role = "Murderer"
+        pcall(function()
+            if not wasHeld then task.wait(0.3) end   -- let the equip finish before activating
+            local t0, fired = os.clock(), false
+            while alive and os.clock() - t0 < 1.5 do
+                local part = mchar:FindFirstChild("UpperTorso") or mchar:FindFirstChild("Torso") or mchar:FindFirstChild("HumanoidRootPart")
+                if not part or not part.Parent then break end
+                if not hooked then FORCE.target = part end   -- only without hooks does the camera have to do the aiming
+                local ready
+                if hooked then
+                    ready = SIL.lock
+                else
+                    ready = os.clock() - t0 > 0.15   -- no hooks: give the camera a moment to settle
+                end
+                if ready and not fired then
+                    fired = true
+                    pcall(function() gun:Activate() end)
+                    task.wait(0.35)
+                    break
+                end
+                task.wait(0.03)
+            end
+        end)
+        FORCE.role = nil
+        FORCE.target = nil
+        shooting = false
+    end)
+    return true
+end
+
+-- Murderer only: equips the knife and throws it at the closest player in line of sight.
+-- How the throw is sent:
+--   1. Learned call: when the executor supports hooks, the script records the game's own knife throw (remote
+--      and arguments) the first time you throw by hand, and replays it with the target position swapped in.
+--   2. Guess: a RemoteEvent named like "Throw" inside the Knife, fired with (origin CFrame, target CFrame).
+--      NOT VERIFIED against the real game.
+-- Every attempt ends with a notification that names the remote used and whether it was learned or guessed.
+local throwing = false
+
+-- Guess for the throw remote: exact "Throw", then "KnifeThrown" / "ThrowKnife", then any remote whose name
+-- contains "throw". Looked up inside the knife first, then in ReplicatedStorage.
+local function findThrowRemote(knife)
+    local function search(root)
+        local best, bestRank
+        for _, d in ipairs(root:GetDescendants()) do
+            if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then
+                local n = d.Name:lower()
+                local rank
+                if d.Name == "Throw" then
+                    rank = 1
+                elseif n == "knifethrown" or n == "throwknife" then
+                    rank = 2
+                elseif n:find("throw", 1, true) then
+                    rank = 3
+                end
+                if rank and (not bestRank or rank < bestRank) then best, bestRank = d, rank end
+            end
+        end
+        return best
+    end
+    return search(knife) or search(game:GetService("ReplicatedStorage"))
+end
+
+-- Arguments of a recorded call (seen = {remote, method, args...}) with the target swapped in. Positions are
+-- replaced; every other value (strings, numbers, booleans) is replayed as recorded.
+local function learnedArgs(seen, origin, tpos)
+    local out = table.pack(table.unpack(seen, 3, seen.n))
+    local nCF = 0
+    for i = 1, out.n do
+        if typeof(out[i]) == "CFrame" then nCF = nCF + 1 end
+    end
+    local k = 0
+    for i = 1, out.n do
+        local a = out[i]
+        local t = typeof(a)
+        if t == "Vector3" then
+            out[i] = tpos
+        elseif t == "CFrame" then
+            k = k + 1
+            -- 2+ CFrames: the last one is the target; a single CFrame: far from the thrower = target
+            local isTarget = (nCF >= 2 and k == nCF) or (nCF == 1 and (a.Position - origin).Magnitude > 15)
+            if isTarget then
+                out[i] = CFrame.new(tpos)
+            else
+                out[i] = CFrame.lookAt(origin, tpos)
+            end
+        end
+    end
+    return out
+end
+
+local function throwKnife()
+    if throwing then return false end
     if roleOf(lp) ~= "Murderer" then
         notify("You are not the Murderer")
         return false
     end
-    local char, hum = myParts()
-    if not (char and hum and hum.Health > 0) then return false end
-    if not pickKnifeTarget() then
-        notify("No target in the FOV")
+    local char, hum, root = myParts()
+    if not (char and hum and root and hum.Health > 0) then
+        notify("Throw Knife: your character is not ready")
         return false
     end
+    if installHooks() then SIL.learnThrow = true end   -- from now on the game's own knife throw is recorded
+
+    -- closest player in line of sight (forced: no FOV or on-screen limit)
+    FORCE.role = "Any"
+    local ok, part, _, plr = pcall(pickTarget, math.huge, CFG.maxDist, "Torso", true)
+    local behindWall
+    if ok and not part then
+        local ok2, p2 = pcall(pickTarget, math.huge, CFG.maxDist, "Torso", false)
+        behindWall = ok2 and p2 ~= nil
+    end
+    FORCE.role = nil
+    if not (ok and part) then
+        notify(behindWall and "Throw Knife: nobody in line of sight (the closest player is behind a wall)"
+            or "Throw Knife: no other player alive within range")
+        return false
+    end
+
     local knife = equip("Knife")
     if not knife then
         notify("Knife not found")
         return false
     end
-    knifeBusy = true
+    throwing = true
     task.spawn(function()
-        pcall(function()
+        local ok3, err = pcall(function()
+            local wasEquipped = knife.Parent == lp.Character
             local t0 = os.clock()
-            while alive and knife.Parent ~= lp.Character and os.clock() - t0 < 0.6 do task.wait(0.03) end
-            if knife.Parent ~= lp.Character then return end
-            local part = pickKnifeTarget()
-            if part then
-                throwKnifeAt(knife, part)
-            else
-                notify("The target left the FOV")
+            while alive and knife.Parent ~= lp.Character and os.clock() - t0 < 0.8 do task.wait(0.03) end
+            if knife.Parent ~= lp.Character then
+                notify("Throw Knife: the knife could not be equipped")
+                return
             end
+            if not wasEquipped then task.wait(0.15) end   -- let the knife's own script finish its setup
+            if not part.Parent then
+                notify("Throw Knife: the target is gone")
+                return
+            end
+
+            local handle = knife:FindFirstChild("Handle")
+            local origin = (handle and handle:IsA("BasePart")) and handle.Position or root.Position
+            local tpos = part.Position
+
+            local remote, method, args, how
+            local seen = SIL.throwSeen
+            if seen then
+                -- the knife is a new instance every round: find the recorded remote again by name
+                remote = knife:FindFirstChild(seen[1].Name, true)
+                if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
+                    method, args, how = seen[2], learnedArgs(seen, origin, tpos), "learned"
+                else
+                    remote = nil
+                end
+            end
+            if not remote then
+                remote = findThrowRemote(knife)
+                if remote then
+                    method = remote:IsA("RemoteFunction") and "InvokeServer" or "FireServer"
+                    args = table.pack(CFrame.lookAt(origin, tpos), CFrame.new(tpos))
+                    how = "guessed"
+                end
+            end
+            if not remote then
+                local names = {}
+                for _, d in ipairs(knife:GetDescendants()) do
+                    if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then names[#names + 1] = d.Name end
+                end
+                notify("Throw remote not found. Throw once by hand so it can be learned. Knife remotes: "
+                    .. (#names > 0 and table.concat(names, ", ") or "none"))
+                return
+            end
+
+            if method == "InvokeServer" and remote:IsA("RemoteFunction") then
+                task.spawn(function()   -- InvokeServer yields until the server answers
+                    pcall(function() remote:InvokeServer(table.unpack(args, 1, args.n)) end)
+                end)
+            else
+                remote:FireServer(table.unpack(args, 1, args.n))
+            end
+            notify(string.format("Knife thrown at %s (%s call: %s)", plr and plr.DisplayName or "?", how, remote.Name))
         end)
-        knifeBusy = false
+        if not ok3 then notify("Throw Knife error: " .. tostring(err)) end
+        throwing = false
     end)
     return true
 end
@@ -1331,13 +1435,14 @@ local UI = {
     { tab = "Combat", icon = "crosshair", sections = {
         { name = "Sheriff", items = {
             { "toggle", "Auto Shoot Murderer", "autoShoot" },
-            { "toggle", "Auto Grab Gun", "gun", function() DEATH.block, DEATH.knife = false, nil end },
+            { "button", "Shoot Murderer", function() shootMurderer(false) end },
+            { "toggle", "Auto Grab Gun", "gun" },
             { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
         } },
         { name = "Murderer", items = {
             { "toggle", "Kill Aura", "aura" },
             { "slider", "Kill Aura Range", "auraRange", 5, 80, 3 },
-            { "toggle", "Throw Knife Button", "knifeButton" },
+            { "button", "Throw Knife", function() throwKnife() end },
         } },
         { name = "Silent Aim", items = {
             { "toggle", "Silent Aim", "silent", function(v)
@@ -1347,8 +1452,11 @@ local UI = {
                 end
             end },
             { "drop", "Target Part", "silentPart", { "Head", "Torso" } },
-            { "slider", "FOV (Silent Aim / Auto Shoot / Throw Knife)", "silentFov", 20, 600, 10 },
+            { "slider", "FOV (Silent Aim / Auto Shoot)", "silentFov", 20, 600, 10 },
             { "toggle", "Show FOV Circle", "silentShowFov" },
+        } },
+        { name = "On-Screen Button", items = {
+            { "toggle", "Shoot / Throw Button", "quickButton" },
         } },
     } },
     { tab = "Fling", icon = "wind", sections = {
@@ -1457,7 +1565,7 @@ local UI = {
 }
 
 -- names of the toggles that count as "active features" in the Status tab (display-only toggles are left out)
-local QUIET = { knifeButton = true, silentShowFov = true, labels = true, dist = true, notify = true,
+local QUIET = { quickButton = true, silentShowFov = true, labels = true, dist = true, notify = true,
     coinNoclip = true, antiafk = true }
 local TOGGLES = {}
 for _, t in ipairs(UI) do
@@ -2066,143 +2174,140 @@ loop(0.4, refresh)
 loop(2, saveSettings)
 
 -- ------------------------------------------------------------
--- On-screen "Throw Knife" button (option "Throw Knife Button"). Draggable; a drag never counts as a press.
+-- On-screen action button: "Shoot Murderer" as Sheriff, "Throw Knife" as Murderer. Draggable.
 -- ------------------------------------------------------------
-local knifeGui = Instance.new("ScreenGui")
-knifeGui.Name = "MM2_Knife"
-knifeGui.ResetOnSpawn = false
-knifeGui.IgnoreGuiInset = true
-knifeGui.DisplayOrder = 2147482998
+local quickGui = Instance.new("ScreenGui")
+quickGui.Name = "MM2_Quick"
+quickGui.ResetOnSpawn = false
+quickGui.IgnoreGuiInset = true
+quickGui.DisplayOrder = 2147482998
 
-local knifeBtn = Instance.new("TextButton")
-knifeBtn.AnchorPoint = Vector2.new(1, 0.5)
-knifeBtn.Position = UDim2.new(1, -16, 0.55, 0)
-knifeBtn.Size = UDim2.fromOffset(150, 54)
-knifeBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-knifeBtn.BackgroundTransparency = 0.15
-knifeBtn.Font = Enum.Font.GothamBold
-knifeBtn.TextSize = 15
-knifeBtn.TextColor3 = Color3.new(1, 1, 1)
-knifeBtn.Text = "Throw Knife"
-knifeBtn.Visible = false
-knifeBtn.Parent = knifeGui
+local quickBtn = Instance.new("TextButton")
+quickBtn.AnchorPoint = Vector2.new(1, 0.5)
+quickBtn.Position = UDim2.new(1, -16, 0.55, 0)
+quickBtn.Size = UDim2.fromOffset(150, 54)
+quickBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+quickBtn.BackgroundTransparency = 0.15
+quickBtn.Font = Enum.Font.GothamBold
+quickBtn.TextSize = 15
+quickBtn.TextColor3 = Color3.new(1, 1, 1)
+quickBtn.Text = "No weapon"
+quickBtn.Visible = false
+quickBtn.Parent = quickGui
 do
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, 10)
-    c.Parent = knifeBtn
-    local st = Instance.new("UIStroke")
-    st.Color = Color3.new(1, 1, 1)
-    st.Transparency = 0.6
-    st.Thickness = 1
-    st.Parent = knifeBtn
+    c.Parent = quickBtn
+    local s = Instance.new("UIStroke")
+    s.Color = Color3.new(1, 1, 1)
+    s.Transparency = 0.6
+    s.Thickness = 1
+    s.Parent = quickBtn
 end
-mount(knifeGui)
+mount(quickGui)
 
-do
-    local dragStart, dragInput, startPos, dragged = nil, nil, nil, false
-    track(knifeBtn.InputBegan:Connect(function(input)
-        local t = input.UserInputType
-        if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
-            dragStart, dragInput, startPos, dragged = input.Position, input, knifeBtn.Position, false
-        end
-    end))
-    track(UIS.InputChanged:Connect(function(input)
-        if dragStart and (input == dragInput or input.UserInputType == Enum.UserInputType.MouseMovement) then
-            local d = input.Position - dragStart
-            if d.Magnitude > 8 then dragged = true end
-            if dragged then
-                knifeBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
-                    startPos.Y.Scale, startPos.Y.Offset + d.Y)
-            end
-        end
-    end))
-    track(UIS.InputEnded:Connect(function(input)
-        if input == dragInput then dragStart = nil end
-    end))
-    track(knifeBtn.Activated:Connect(function()
+-- drag to move; a drag never counts as a click
+local dragStart, dragInput, startPos, dragged = nil, nil, nil, false
+track(quickBtn.InputBegan:Connect(function(input)
+    local t = input.UserInputType
+    if t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
+        dragStart, dragInput, startPos, dragged = input.Position, input, quickBtn.Position, false
+    end
+end))
+track(UIS.InputChanged:Connect(function(input)
+    if dragStart and (input == dragInput or (input.UserInputType == Enum.UserInputType.MouseMovement
+        and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1))) then
+        local d = input.Position - dragStart
+        if d.Magnitude > 8 then dragged = true end
         if dragged then
-            dragged = false
-            return
+            quickBtn.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X,
+                startPos.Y.Scale, startPos.Y.Offset + d.Y)
         end
-        throwKnifeInFov()
-    end))
-end
+    end
+end))
+track(UIS.InputEnded:Connect(function(input)
+    local t = input.UserInputType
+    if input == dragInput or t == Enum.UserInputType.MouseButton1 or t == Enum.UserInputType.Touch then
+        dragStart = nil   -- the drag always ends with the click or tap, even when the input objects differ
+    end
+end))
 
--- red while you are the Murderer (the only role that can throw), grey otherwise
+track(quickBtn.Activated:Connect(function()
+    if dragged then
+        dragged = false
+        return
+    end
+    local role = roleOf(lp)
+    if role == "Sheriff" then
+        shootMurderer(false)
+    elseif role == "Murderer" then
+        throwKnife()
+    else
+        notify("You have no weapon")
+    end
+end))
+
 loop(0.25, function()
-    knifeBtn.Visible = S.knifeButton
-    if S.knifeButton then
-        knifeBtn.BackgroundColor3 = (roleOf(lp) == "Murderer") and COLORS.Murderer or Color3.fromRGB(60, 60, 60)
+    quickBtn.Visible = S.quickButton
+    if not S.quickButton then return end
+    local role = roleOf(lp)
+    if role == "Murderer" and not SIL.learnThrow and installHooks() then SIL.learnThrow = true end
+    if role == "Sheriff" then
+        quickBtn.Text, quickBtn.BackgroundColor3 = "Shoot Murderer", COLORS.Sheriff
+    elseif role == "Murderer" then
+        quickBtn.Text, quickBtn.BackgroundColor3 = "Throw Knife", COLORS.Murderer
+    else
+        quickBtn.Text, quickBtn.BackgroundColor3 = "No weapon", Color3.fromRGB(60, 60, 60)
     end
 end)
 
 -- camera: silent aim (target calculation) and its FOV circle
 -- Bound AFTER Roblox's camera script (Camera priority + 1): a plain RenderStepped connection can run
 -- before the camera update, which then overwrites the CFrame a forced shot just set.
--- Auto Shoot Murderer (Sheriff): runs inside the render step, right after the Silent Aim target is computed, so
--- the shot leaves the very frame the murderer enters the FOV circle (same FOV, same target part and same
--- line-of-sight rule as Silent Aim). The gun is taken out only once the murderer is inside the FOV and put back
--- when he has been outside it for a moment; a gun you hold yourself is never put away.
-local function continueShot(now, gun)
+-- Auto Shoot (sheriff): runs inside the render step, right after the Silent Aim target is computed, so the
+-- shot leaves the very frame the murderer enters the FOV circle (same FOV, same target part and same
+-- line-of-sight rule as Silent Aim). The gun is kept in hand while the option is on: no equip delay.
+local function autoShootStep(now)
+    if shooting then return end
+    local char, hum = myParts()
+    if not (char and hum and hum.Health > 0) or roleOf(lp) ~= "Sheriff" then
+        if AUTO.active then endAutoShot() end
+        return
+    end
+
+    local gun = char:FindFirstChild("Gun")
+    if not (gun and gun:IsA("Tool")) then
+        if AUTO.active then endAutoShot() end
+        if now - AUTO.lastEquip > 0.4 then
+            AUTO.lastEquip = now
+            equip("Gun")
+        end
+        return
+    end
+
+    if not AUTO.active then
+        if now < AUTO.nextShot then return end
+        FORCE.role = "Murderer"   -- only the murderer counts, and roles are read fresh (not from the cache)
+        local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
+        if not (ok and part) then
+            FORCE.role = nil
+            return
+        end
+        local hooked = installHooks()
+        FORCE.part = part
+        if not hooked then FORCE.target = part end   -- no hooks: the camera has to do the aiming
+        AUTO.active = true
+        AUTO.fireAt = hooked and now or now + 0.15
+        AUTO.endAt = now + (hooked and 0.35 or 0.6)
+        AUTO.nextShot = now + 0.5
+        if hooked then pcall(computeSilent) end   -- lock the target this very frame
+    end
+
     if AUTO.fireAt and now >= AUTO.fireAt then
         AUTO.fireAt = nil
         pcall(function() gun:Activate() end)
     end
     if now >= AUTO.endAt then endAutoShot() end
-end
-
-local function autoShootStep(now)
-    local char, hum = myParts()
-    if not (char and hum and hum.Health > 0) or roleOf(lp) ~= "Sheriff" then
-        if AUTO.active then endAutoShot() end
-        AUTO.equipped = nil
-        return
-    end
-
-    local gun = char:FindFirstChild("Gun")
-    if not (gun and gun:IsA("Tool")) then gun = nil end
-
-    if AUTO.active then   -- a shot is in progress: the gun has to stay in hand until it is over
-        AUTO.lastSeen = now   -- the hold time before putting the gun back starts when the shot is over
-        if gun then continueShot(now, gun) else endAutoShot() end
-        return
-    end
-
-    FORCE.role = "Murderer"   -- only the murderer counts, and roles are read fresh (not from the cache)
-    local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
-    if not (ok and part) then
-        FORCE.role = nil
-        if AUTO.equipped and now - AUTO.lastSeen > 0.6 then releaseAutoWeapon() end
-        return
-    end
-    AUTO.lastSeen = now
-
-    if not gun then   -- the murderer just entered the FOV: take the gun out now, not before
-        FORCE.role = nil
-        if now - AUTO.lastEquip > 0.4 then
-            AUTO.lastEquip = now
-            local tool = equip("Gun")
-            if tool then
-                AUTO.equipped = tool
-                AUTO.readyAt = now + 0.3   -- let the equip finish before firing (uncalibrated)
-            end
-        end
-        return
-    end
-    if now < AUTO.readyAt or now < AUTO.nextShot then
-        FORCE.role = nil
-        return
-    end
-
-    local hooked = installHooks()
-    FORCE.part = part
-    if not hooked then FORCE.target = part end   -- no hooks: the camera has to do the aiming
-    AUTO.active = true
-    AUTO.fireAt = hooked and now or now + 0.15
-    AUTO.endAt = now + (hooked and 0.35 or 0.6)
-    AUTO.nextShot = now + 0.5
-    if hooked then pcall(computeSilent) end   -- lock the target this very frame
-    continueShot(now, gun)
 end
 
 local RS_NAME = "MM2Hub_Aim"
@@ -2211,7 +2316,7 @@ RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, funct
     local cam = workspace.CurrentCamera
     if not cam then return end
 
-    -- Auto Shoot without hooks: hold the camera on the target while the shot is being fired
+    -- Shoot Murderer: hold the camera on the murderer while the shot is being fired
     local ft = FORCE.target
     if FORCE.role and ft and ft.Parent then
         cam.CFrame = CFrame.lookAt(cam.CFrame.Position, ft.Position)
@@ -2221,13 +2326,12 @@ RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, funct
 
     if S.autoShoot then
         pcall(autoShootStep, os.clock())
-    else
-        if AUTO.active then endAutoShot() end
-        if AUTO.equipped then releaseAutoWeapon() end
+    elseif AUTO.active then
+        endAutoShot()
     end
 
     circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2)
-    circSil.Visible = (S.silent or S.autoShoot or S.knifeButton) and S.silentShowFov
+    circSil.Visible = (S.silent or S.autoShoot) and S.silentShowFov
 
 end)
 
@@ -2472,7 +2576,6 @@ env.__MM2_CLEANUP = function()
     env.__MM2_SIL3 = nil   -- hooks that stay installed become pass-through
     S.speed, S.jump, S.fly, S.noclip, S.coins, S.gun = false, false, false, false, false, false
     endAutoShot()
-    pcall(releaseAutoWeapon)
     pcall(function() RunService:UnbindFromRenderStep(RS_NAME) end)
     S.fullbright = false
     if curTween then pcall(function() curTween:Cancel() end) end
@@ -2495,7 +2598,7 @@ env.__MM2_CLEANUP = function()
     end
     pcall(ui.destroy)
     pcall(function() fovGui:Destroy() end)
-    pcall(function() knifeGui:Destroy() end)
+    pcall(function() quickGui:Destroy() end)
     env.__MM2_CLEANUP = nil
 end
 
