@@ -1,6 +1,6 @@
 -- ============================================================
 -- MM2 Hub | Murder Mystery 2 (Roblox) | Slate UI
--- Main     : Round Info | Grab Gun | Shoot Murderer | Teleport to Sheriff / Murderer
+-- Status   : Round (murderer, sheriff, gun drop, coins) | You | Quick Actions | Script (active features, executor)
 -- Combat   : Sheriff (Auto Shoot Murderer, Auto Grab Gun) | Murderer (Kill Aura) | Aimbot | Silent Aim
 -- Visuals  : Player ESP | Names | Distance | Role Notifier | Coin ESP | Gun ESP | Fullbright
 -- Movement : WalkSpeed | JumpPower | Fly | Infinite Jump | Noclip | Anti Fling | Anti Void
@@ -77,6 +77,10 @@ local COLORS = {
     Innocent = Color3.fromRGB(80, 230, 120),
 }
 local touch = (typeof(firetouchinterest) == "function") and firetouchinterest or nil
+local function yn(v) return v and "yes" or "no" end
+local EXEC = "Hooks: " .. yn(typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function")
+    .. " | Touch: " .. yn(touch ~= nil)
+    .. " | Files: " .. yn(typeof(readfile) == "function" and typeof(writefile) == "function")
 
 local function notify(msg)
     pcall(function()
@@ -509,8 +513,54 @@ local function applyLighting()
     Lighting.Ambient = Color3.new(1, 1, 1)
 end
 
-local setInfo -- set by the simple menu (Slate shows roles through notifications)
+-- Status tab labels: the menu renderers register one setter per label id, refresh() fills them in
+local INFO = {}
+local function info(id, text)
+    local set = INFO[id]
+    if set then set(text) end
+end
+local activeFeatures   -- assigned once the menu spec exists
+local menuKind = "loading"
 local lastMurd, lastSher
+
+local function describe(plr, myRoot)
+    if not plr then return "?" end
+    local char = plr.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health <= 0 then return plr.DisplayName .. " (dead)" end
+    local r = char and char:FindFirstChild("HumanoidRootPart")
+    if r and myRoot then
+        return plr.DisplayName .. " (" .. math.floor((r.Position - myRoot.Position).Magnitude) .. "m)"
+    end
+    return plr.DisplayName
+end
+
+local function updateStatus(murd, sher, myRoot)
+    local coins = 0
+    local cont = coinContainer()
+    if cont then
+        for _, c in ipairs(cont:GetDescendants()) do
+            if c:IsA("BasePart") and c.Name == "Coin_Server" then coins = coins + 1 end
+        end
+    end
+    local alive, total = 0, 0
+    for _, plr in ipairs(Players:GetPlayers()) do
+        total = total + 1
+        local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
+        if h and h.Health > 0 then alive = alive + 1 end
+    end
+    local _, myHum = myParts()
+    info("round", "Round: " .. ((murd or sher) and "active" or "waiting")
+        .. "\nMurderer: " .. describe(murd, myRoot)
+        .. "\nSheriff: " .. describe(sher, myRoot)
+        .. "\nGun drop: " .. (workspace:FindFirstChild("GunDrop") and "on the map" or "none")
+        .. "\nCoins on map: " .. coins)
+    info("me", "Role: " .. roleOf(lp)
+        .. "\nHealth: " .. (myHum and (math.floor(myHum.Health) .. "/" .. math.floor(myHum.MaxHealth)) or "?")
+        .. "\nPlayers: " .. total .. " (" .. alive .. " alive)")
+    info("script", "Active: " .. (activeFeatures and activeFeatures() or "?")
+        .. "\n" .. EXEC .. "\nMenu: " .. menuKind)
+end
 
 local function refresh()
     local murd, sher
@@ -550,11 +600,7 @@ local function refresh()
     end
     lastMurd, lastSher = murd, sher
 
-    if setInfo then
-        setInfo("Murderer: " .. (murd and murd.DisplayName or "?")
-            .. "\nSheriff: " .. (sher and sher.DisplayName or "?")
-            .. "\nYour role: " .. roleOf(lp))
-    end
+    updateStatus(murd, sher, myRoot)
     updateCoinEsp()
     updateGunEsp()
     applyLighting()
@@ -742,15 +788,21 @@ end
 -- button : { "button", name, callback }
 -- ------------------------------------------------------------
 local UI = {
-    { tab = "Main", icon = "star", sections = {
-        { name = "Round Info", items = {
-            { "label", "Murderer: ?\nSheriff: ?\nYour role: ?" },
+    { tab = "Status", icon = "activity", sections = {
+        { name = "Round", items = {
+            { "label", "Waiting for data...", "round" },
         } },
-        { name = "Quick Actions", items = {
+        { name = "You", items = {
+            { "label", "Waiting for data...", "me" },
+        } },
+        { name = "Actions", items = {
             { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
             { "button", "Shoot Murderer", function() shootMurderer(false) end },
             { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
             { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
+        } },
+        { name = "Script", items = {
+            { "label", "Waiting for data...", "script" },
         } },
     } },
     { tab = "Combat", icon = "crosshair", sections = {
@@ -855,6 +907,27 @@ local UI = {
     } },
 }
 
+-- names of the toggles that count as "active features" in the Status tab (display-only toggles are left out)
+local QUIET = { aimShowFov = true, silentShowFov = true, labels = true, dist = true, notify = true,
+    coinNoclip = true, antiafk = true }
+local TOGGLES = {}
+for _, t in ipairs(UI) do
+    for _, sec in ipairs(t.sections) do
+        for _, it in ipairs(sec.items) do
+            if it[1] == "toggle" and not QUIET[it[3]] then TOGGLES[#TOGGLES + 1] = { key = it[3], name = it[2] } end
+        end
+    end
+end
+activeFeatures = function()
+    local on = {}
+    for _, t in ipairs(TOGGLES) do
+        if S[t.key] then on[#on + 1] = t.name end
+    end
+    if #on == 0 then return "none" end
+    if #on <= 6 then return table.concat(on, ", ") end
+    return table.concat(on, ", ", 1, 6) .. " (+" .. (#on - 6) .. " more)"
+end
+
 -- ------------------------------------------------------------
 -- Saved settings (needs readfile/writefile; skipped silently without them)
 -- Valid ranges and choices come from the menu spec above, so a stale or hand-edited file cannot inject bad values.
@@ -920,7 +993,10 @@ local function saveSettings()
 end
 
 loadSettings()
-if S.silent and not installHooks() then S.silent = false end   -- the hooks are not installed by a saved toggle alone
+if S.silent and not installHooks() then   -- the hooks are not installed by a saved toggle alone
+    S.silent = false
+    notify("Silent Aim was on in your saved settings but your executor has no hookmetamethod")
+end
 saved = currentSettings()
 
 -- ------------------------------------------------------------
@@ -963,7 +1039,11 @@ local function buildSlate()
 
     local created = 0
     for _, t in ipairs(UI) do
+        -- a tab with an icon Slate does not know must not disappear: retry without the icon
         local okT, tab = pcall(function() return win:CreateTab({ Name = t.tab, Icon = t.icon }) end)
+        if not (okT and tab) then
+            okT, tab = pcall(function() return win:CreateTab({ Name = t.tab }) end)
+        end
         if okT and tab then
             pcall(function() tab:SetColumns(2) end)
             for _, sec in ipairs(t.sections) do
@@ -1004,7 +1084,7 @@ local function buildSlate()
                                 section:Button({ Name = it[2], Callback = function() pcall(cb) end })
                             elseif kind == "label" then
                                 local lbl = section:Label({ Name = it[2] })
-                                setInfo = function(text) pcall(function() lbl:Set(text, true) end) end
+                                INFO[it[3]] = function(text) pcall(function() lbl:Set(text, true) end) end
                             end
                         end)
                         if okI then created = created + 1 end
@@ -1257,19 +1337,22 @@ local function buildFallback()
         mk("+", -32, 1)
     end
 
-    -- roles (text updated by refresh())
-    local info = Instance.new("TextLabel")
-    info.Size = UDim2.new(1, 0, 0, 48)
-    info.BackgroundTransparency = 1
-    info.Text = "Murderer: ?\nSheriff: ?\nYour role: ?"
-    info.TextColor3 = Color3.new(1, 1, 1)
-    info.Font = Enum.Font.Gotham
-    info.TextSize = 12
-    info.TextXAlignment = Enum.TextXAlignment.Left
-    info.TextYAlignment = Enum.TextYAlignment.Top
-    info.LayoutOrder = 0
-    info.Parent = pages[UI[1].tab].frame
-    setInfo = function(text) info.Text = text end
+    local function addInfo(p, text, id)
+        local l = Instance.new("TextLabel")
+        l.Size = UDim2.new(1, 0, 0, 0)
+        l.AutomaticSize = Enum.AutomaticSize.Y
+        l.BackgroundTransparency = 1
+        l.Text = text
+        l.TextColor3 = Color3.new(1, 1, 1)
+        l.Font = Enum.Font.Gotham
+        l.TextSize = 12
+        l.TextWrapped = true
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.TextYAlignment = Enum.TextYAlignment.Top
+        l.LayoutOrder = slot(p)
+        l.Parent = p.frame
+        INFO[id] = function(t) l.Text = t end
+    end
 
     for _, t in ipairs(UI) do
         local p = pages[t.tab]
@@ -1280,7 +1363,8 @@ local function buildFallback()
                 if kind == "toggle" then addToggle(p, it[2], it[3], it[4])
                 elseif kind == "drop" then addCycle(p, it[2], it[3], it[4], it[5])
                 elseif kind == "slider" then addStepper(p, it[2], it[3], it[4], it[5], it[6] or 1, it[7])
-                elseif kind == "button" then addButton(p, it[2], it[3]) end
+                elseif kind == "button" then addButton(p, it[2], it[3])
+                elseif kind == "label" then addInfo(p, it[2], it[3]) end
             end
         end
     end
@@ -1291,7 +1375,7 @@ local function buildFallback()
     return {
         toggle = function() win.Visible = not win.Visible end,
         destroy = function()
-            setInfo = nil
+            for id in pairs(INFO) do INFO[id] = nil end
             pcall(function() gui:Destroy() end)
         end,
     }
@@ -1334,9 +1418,11 @@ local ui
 local slateUi, slateErr = buildSlate()
 if slateUi then
     ui = slateUi
+    menuKind = "Slate"
 else
     notify("Slate unavailable (" .. tostring(slateErr):sub(1, 90) .. "). Using the simple menu.")
     ui = buildFallback()
+    menuKind = "simple menu"
 end
 
 -- the simple menu has no built-in toggle key, so give it RightShift (Slate handles its own)
