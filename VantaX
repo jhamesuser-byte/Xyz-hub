@@ -1452,7 +1452,7 @@ local UI = {
                 end
             end },
             { "drop", "Target Part", "silentPart", { "Head", "Torso" } },
-            { "slider", "FOV (Silent Aim / Auto Shoot)", "silentFov", 20, 600, 10 },
+            { "slider", "FOV", "silentFov", 20, 600, 10 },
             { "toggle", "Show FOV Circle", "silentShowFov" },
         } },
         { name = "On-Screen Button", items = {
