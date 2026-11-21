@@ -41,7 +41,7 @@ local S = {
     fly = false, flySpeed = 60, infjump = false, noclip = false,
     antiFling = true, antiVoid = true,
     -- fling
-    flingTime = 3, loopMurd = false, loopSher = false, flingPick = "",
+    loopMurd = false, loopSher = false, flingPick = "",
     -- misc
     antiafk = true, quickButton = false,
 }
@@ -52,14 +52,11 @@ local CFG = {
     maxDist = 600,
     minRayLen = 40,      -- Silent Aim ignores rays shorter than this (camera occlusion, ground checks); uncalibrated
     wall = true,         -- only target visible players
-    flingRange = 30,     -- studs: other players closer than this stop colliding with you (Anti Fling)
-    maxVelocity = 300,   -- studs/s and rad/s above which Anti Fling snaps you back (uncalibrated)
-    maxSpin = 80,
     voidMargin = 50,     -- studs above FallenPartsDestroyHeight where Anti Void kicks in
 }
 
 -- fling state: busy = a fling (or a batch) is running, stop = cancel request
-local FLING = { busy = false, stop = false, sel = nil }
+local FLING = { busy = false, stop = false, sel = nil, active = false }   -- active = fling mode: Anti Fling stays paused
 local showSelected, PLAYER_DD   -- set further down (player picker of the Fling tab)
 
 local COLORS = {
@@ -1169,9 +1166,19 @@ end
 -- Fling
 -- The character sits on the target and spins at a huge speed, so the physics contact throws him away.
 -- It only works if players collide with each other in MM2 (NOT VERIFIED against the real game).
--- Our own protections (Anti Fling, Noclip, Anti Void) are paused while it runs, then you are put back
--- where you were.
+-- Each fling keeps going until the target is thrown away (or you press Stop Fling); Fling All gives up on
+-- one player after FLING_BATCH_MAX seconds so it can move on to the next.
+-- Fling mode: the first fling you start pauses Anti Fling (it would switch the players' collision off and
+-- the fling needs it). It stays paused until you press Stop Fling and no Loop Fling toggle is on.
+-- Noclip is also paused while a fling runs, then you are put back where you were.
 -- ------------------------------------------------------------
+local FLING_BATCH_MAX = 12
+
+local function setFlingMode(on)
+    if on and not FLING.active and S.antiFling then notify("Anti Fling paused until you stop the fling") end
+    FLING.active = on
+end
+
 local FLING_OFFSETS = {
     CFrame.new(0, 1.5, 0), CFrame.new(0, -1.5, 0),
     CFrame.new(2, 0, 0),   CFrame.new(-2, 0, 0),
@@ -1214,21 +1221,32 @@ local function flingPlayer(plr, quiet, inBatch)
     end
 
     FLING.busy = true
+    setFlingMode(true)
     if not inBatch then FLING.stop = false end
     local home = root.CFrame
-    local startPos = troot.Position
     local oldFall = workspace.FallenPartsDestroyHeight
+    local oldProps, oldStand = root.CustomPhysicalProperties, hum.PlatformStand
     pcall(function() workspace.FallenPartsDestroyHeight = -1e9 end)   -- do not get deleted when thrown down
+    -- heavy, frictionless body: the hit transfers much more momentum; no humanoid fighting the spin
+    pcall(function()
+        root.CustomPhysicalProperties = PhysicalProperties.new(100, 0, 0, 0, 0)
+        hum.PlatformStand = true
+    end)
 
     local flung = false
     pcall(function()
         local t0, n = os.clock(), 0
-        while alive and not FLING.stop and os.clock() - t0 < S.flingTime do
+        local limit = inBatch and FLING_BATCH_MAX or math.huge
+        local last = troot.Position
+        while alive and not FLING.stop and os.clock() - t0 < limit do
             if not (root.Parent and troot.Parent and hum.Health > 0 and thum.Health > 0) then break end
-            if (troot.Position - startPos).Magnitude > 150 or troot.AssemblyLinearVelocity.Magnitude > 450 then
+            -- thrown away: absurd speed, a jump of many studs in one frame, or fell out of the map
+            if troot.AssemblyLinearVelocity.Magnitude > 300 or (troot.Position - last).Magnitude > 25
+                or troot.Position.Y < oldFall + 10 then
                 flung = true
                 break
             end
+            last = troot.Position
             n = n + 1
             -- sit on him (a little ahead of where he is going) and spin
             root.CFrame = troot.CFrame * FLING_OFFSETS[n % #FLING_OFFSETS + 1] + troot.AssemblyLinearVelocity * 0.1
@@ -1248,7 +1266,11 @@ local function flingPlayer(plr, quiet, inBatch)
             RunService.Heartbeat:Wait()
         end
     end)
-    pcall(function() workspace.FallenPartsDestroyHeight = oldFall end)
+    pcall(function()
+        workspace.FallenPartsDestroyHeight = oldFall
+        root.CustomPhysicalProperties = oldProps
+        hum.PlatformStand = oldStand
+    end)
     if not inBatch then FLING.busy = false end
     return flung
 end
@@ -1295,6 +1317,7 @@ local function flingAll()
     local why = flingBlocked()
     if why then notify(why); return end
     FLING.busy, FLING.stop = true, false
+    setFlingMode(true)
     task.spawn(function()
         local count = 0
         pcall(function()
@@ -1435,9 +1458,7 @@ local UI = {
     { tab = "Combat", icon = "crosshair", sections = {
         { name = "Sheriff", items = {
             { "toggle", "Auto Shoot Murderer", "autoShoot" },
-            { "button", "Shoot Murderer", function() shootMurderer(false) end },
             { "toggle", "Auto Grab Gun", "gun" },
-            { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
         } },
         { name = "Murderer", items = {
             { "toggle", "Kill Aura", "aura" },
@@ -1465,7 +1486,10 @@ local UI = {
             { "button", "Fling Sheriff", function() flingRole("Sheriff") end },
             { "button", "Fling Nearest", flingNearest },
             { "button", "Fling All", flingAll },
-            { "button", "Stop Fling", function() FLING.stop = true end },
+            { "button", "Stop Fling", function()
+                FLING.stop = true
+                setFlingMode(S.loopMurd or S.loopSher)   -- fling mode ends here (unless a loop is still on)
+            end },
         } },
         { name = "Fling Player", items = {
             { "players", "Select Player", pickPlayer },
@@ -1479,11 +1503,26 @@ local UI = {
             end },
         } },
         { name = "Loop Fling", items = {
-            { "toggle", "Loop Fling Murderer", "loopMurd" },
-            { "toggle", "Loop Fling Sheriff", "loopSher" },
+            { "toggle", "Loop Fling Murderer", "loopMurd", function(v)
+                if v then
+                    setFlingMode(true)
+                elseif not (S.loopMurd or S.loopSher) then
+                    FLING.stop = true
+                    setFlingMode(false)
+                end
+            end },
+            { "toggle", "Loop Fling Sheriff", "loopSher", function(v)
+                if v then
+                    setFlingMode(true)
+                elseif not (S.loopMurd or S.loopSher) then
+                    FLING.stop = true
+                    setFlingMode(false)
+                end
+            end },
         } },
-        { name = "Settings", items = {
-            { "slider", "Fling Duration (s)", "flingTime", 1, 8, 1 },
+        { name = "Protection", items = {
+            { "toggle", "Anti Fling", "antiFling" },
+            { "toggle", "Anti Void", "antiVoid" },
         } },
     } },
     { tab = "Visuals", icon = "eye", sections = {
@@ -1529,10 +1568,6 @@ local UI = {
         { name = "Teleport", items = {
             { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
             { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
-        } },
-        { name = "Protection", items = {
-            { "toggle", "Anti Fling", "antiFling" },
-            { "toggle", "Anti Void", "antiVoid" },
         } },
     } },
     { tab = "Farm", icon = "coins", sections = {
@@ -2521,26 +2556,31 @@ track(lp.Idled:Connect(function()
 end))
 
 -- protection (defensive, local only)
--- Anti Fling: nearby players' body parts stop colliding with you, so they cannot push or spin you.
--- Their collision stays off locally until their character respawns, even after you turn this off.
+-- Anti Fling: while on, every other player's body parts stop colliding with you, so you walk through them.
+-- Turning it off, or entering fling mode (any fling started, until Stop Fling), gives their collision back.
+local antiSaved = {}   -- part -> its original CanCollide
 track(RunService.Stepped:Connect(function()
-    if not S.antiFling or FLING.busy then return end
-    local _, _, root = myParts()
-    if not root then return end
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= lp then
-            local c = plr.Character
-            local r = c and c:FindFirstChild("HumanoidRootPart")
-            if r and (r.Position - root.Position).Magnitude < CFG.flingRange then
-                for _, p in ipairs(c:GetChildren()) do
-                    if p:IsA("BasePart") then p.CanCollide = false end
+    if S.antiFling and not FLING.busy and not FLING.active then
+        for _, plr in ipairs(Players:GetPlayers()) do
+            local c = plr ~= lp and plr.Character
+            if c then
+                for _, p in ipairs(c:GetDescendants()) do
+                    if p:IsA("BasePart") and p.CanCollide then
+                        antiSaved[p] = true
+                        p.CanCollide = false
+                    end
                 end
             end
         end
+    elseif next(antiSaved) then
+        for p in pairs(antiSaved) do
+            if p.Parent then p.CanCollide = true end
+        end
+        antiSaved = {}
     end
 end))
 
--- Anti Fling (speed guard) + Anti Void: remember the last normal position and snap back to it
+-- Anti Void: remember the last normal position and snap back to it
 local safeCF
 track(RunService.Heartbeat:Connect(function()
     local _, hum, root = myParts()
@@ -2549,11 +2589,8 @@ track(RunService.Heartbeat:Connect(function()
         return
     end
     if FLING.busy then return end   -- our own fling: do not snap back
-    local flung = S.antiFling and not S.fly
-        and (root.AssemblyLinearVelocity.Magnitude > CFG.maxVelocity
-            or root.AssemblyAngularVelocity.Magnitude > CFG.maxSpin)
     local voided = S.antiVoid and root.Position.Y < workspace.FallenPartsDestroyHeight + CFG.voidMargin
-    if flung or voided then
+    if voided then
         if safeCF then
             root.AssemblyLinearVelocity = Vector3.zero
             root.AssemblyAngularVelocity = Vector3.zero
