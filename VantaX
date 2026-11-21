@@ -2095,9 +2095,18 @@ local UI = {
     { tab = "Misc", icon = "wrench", sections = {
         { name = "Utilities", items = {
             { "slider", "Menu Size (%)", "menuScale", 50, 200, 5, function(v)
-                local w, h = math.floor(540 * v / 100), math.floor(360 * v / 100)
-                pcall(function() if MENU_WINDOW then MENU_WINDOW.Size = UDim2.fromOffset(w, h) end end)
-                pcall(function() if MENU_WINDOW then MENU_WINDOW.MinSize = Vector2.new(math.floor(480 * v / 100), math.floor(320 * v / 100)) end end)
+                if not MENU_WINDOW or MENU_WINDOW.Destroyed then return end
+                local scale = math.clamp((tonumber(v) or 100) / 100, 0.5, 2)
+                local w, h = math.floor(540 * scale), math.floor(360 * scale)
+                local minW, minH = math.floor(480 * scale), math.floor(320 * scale)
+                pcall(function()
+                    MENU_WINDOW.MinSize = Vector2.new(minW, minH)
+                    MENU_WINDOW.root.Size = UDim2.fromOffset(w, h)
+                    MENU_WINDOW._railWidth = nil
+                    MENU_WINDOW._railFloorCache = nil
+                    MENU_WINDOW:_layoutRail(false)
+                    MENU_WINDOW:_clampToViewport()
+                end)
             end },
             { "toggle", "Anti-AFK", "antiafk" },
             { "button", "Rejoin", rejoin },
