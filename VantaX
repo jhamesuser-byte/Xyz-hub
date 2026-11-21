@@ -44,6 +44,8 @@ local S = {
     loopMurd = false, loopSher = false, flingPick = "",
     -- misc
     antiafk = true, quickButton = false,
+    -- animations
+    runAnim = "Off",
 }
 
 local CFG = {
@@ -78,12 +80,12 @@ local EXEC = "Hooks: " .. yn(typeof(hookmetamethod) == "function" and typeof(get
 local NOTIFY = { gui = nil, list = nil, order = 0, last = {} }
 local notify
 do
-    local WIDTH, MAX = 300, 5
+    local WIDTH, MAX = 215, 4
     local KINDS = {
-        info     = { color = Color3.fromRGB(160, 120, 255), title = "MM2 Hub" },
-        success  = { color = Color3.fromRGB(80, 230, 120),  title = "Done" },
-        warn     = { color = Color3.fromRGB(255, 190, 70),  title = "Warning" },
-        error    = { color = Color3.fromRGB(255, 85, 85),   title = "Error" },
+        info     = { color = Color3.fromRGB(168, 100, 255), title = "MM2 Hub" },
+        success  = { color = Color3.fromRGB(190, 140, 255), title = "Success" },
+        warn     = { color = Color3.fromRGB(140, 90, 230),  title = "Notice" },
+        error    = { color = Color3.fromRGB(125, 70, 215),  title = "Error" },
         murderer = { color = COLORS.Murderer,               title = "Murderer" },
         sheriff  = { color = COLORS.Sheriff,                title = "Sheriff" },
     }
@@ -127,12 +129,12 @@ do
         list.Name = "List"
         list.BackgroundTransparency = 1
         list.AnchorPoint = Vector2.new(1, 0)
-        list.Position = UDim2.new(1, -16, 0, 64)
+        list.Position = UDim2.new(1, -12, 0, 56)
         list.Size = UDim2.fromOffset(WIDTH, 0)
         list.AutomaticSize = Enum.AutomaticSize.Y
         list.Parent = gui
         local layout = Instance.new("UIListLayout")
-        layout.Padding = UDim.new(0, 8)
+        layout.Padding = UDim.new(0, 5)
         layout.SortOrder = Enum.SortOrder.LayoutOrder
         layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
         layout.Parent = list
@@ -188,7 +190,7 @@ do
         pcall(function()
             if not alive or not ensureGui() then return end
             local k = KINDS[kind or guessKind(msg)] or KINDS.info
-            local duration = math.clamp(2.5 + #msg * 0.03, 3, 8)
+            local duration = math.clamp(1.8 + #msg * 0.03, 2.5, 5)
 
             -- keep at most MAX toasts on screen: the oldest one leaves
             local shown = {}
@@ -212,22 +214,22 @@ do
             toast.Size = UDim2.new(1, 0, 0, 0)
             toast.AutomaticSize = Enum.AutomaticSize.Y
             toast.Position = UDim2.new(1, 40, 0, 0)   -- starts off to the right and slides in
-            toast.BackgroundColor3 = Color3.fromRGB(18, 16, 27)
+            toast.BackgroundColor3 = Color3.fromRGB(22, 14, 34)
             toast.BackgroundTransparency = 0.05
             toast.BorderSizePixel = 0
             toast.Parent = holder
             local corner = Instance.new("UICorner")
-            corner.CornerRadius = UDim.new(0, 10)
+            corner.CornerRadius = UDim.new(0, 8)
             corner.Parent = toast
             local stroke = Instance.new("UIStroke")
             stroke.Color = k.color
-            stroke.Transparency = 0.6
+            stroke.Transparency = 0.45
             stroke.Thickness = 1
             stroke.Parent = toast
 
             local accent = Instance.new("Frame")   -- colored strip on the left
-            accent.Position = UDim2.new(0, 8, 0, 10)
-            accent.Size = UDim2.new(0, 3, 1, -20)
+            accent.Position = UDim2.new(0, 6, 0, 8)
+            accent.Size = UDim2.new(0, 3, 1, -16)
             accent.BackgroundColor3 = k.color
             accent.BorderSizePixel = 0
             accent.Parent = toast
@@ -237,24 +239,24 @@ do
 
             local content = Instance.new("Frame")
             content.BackgroundTransparency = 1
-            content.Position = UDim2.new(0, 20, 0, 0)
-            content.Size = UDim2.new(1, -32, 0, 0)
+            content.Position = UDim2.new(0, 16, 0, 0)
+            content.Size = UDim2.new(1, -24, 0, 0)
             content.AutomaticSize = Enum.AutomaticSize.Y
             content.Parent = toast
             local pad = Instance.new("UIPadding")
-            pad.PaddingTop = UDim.new(0, 10)
-            pad.PaddingBottom = UDim.new(0, 16)
+            pad.PaddingTop = UDim.new(0, 7)
+            pad.PaddingBottom = UDim.new(0, 12)
             pad.Parent = content
             local lay = Instance.new("UIListLayout")
             lay.Padding = UDim.new(0, 2)
             lay.SortOrder = Enum.SortOrder.LayoutOrder
             lay.Parent = content
-            label(content, string.upper(title or k.title), Enum.Font.GothamBold, 11, k.color, 1)
-            label(content, msg, Enum.Font.GothamMedium, 13, Color3.fromRGB(236, 234, 245), 2)
+            label(content, string.upper(title or k.title), Enum.Font.GothamBold, 9, k.color, 1)
+            label(content, msg, Enum.Font.GothamMedium, 11, Color3.fromRGB(240, 232, 250), 2)
 
             local track = Instance.new("Frame")   -- timer bar
-            track.Position = UDim2.new(0, 20, 1, -7)
-            track.Size = UDim2.new(1, -32, 0, 2)
+            track.Position = UDim2.new(0, 16, 1, -5)
+            track.Size = UDim2.new(1, -24, 0, 2)
             track.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             track.BackgroundTransparency = 0.9
             track.BorderSizePixel = 0
@@ -377,7 +379,7 @@ local FORCE = { role = nil, target = nil, part = nil }   -- target: part the cam
 -- heldSince = when the gun came into the hand, equipped = we pulled it out ourselves (so we may put it away),
 -- seenAt = last time the murderer was inside the FOV, part = the part of the shot being held
 local AUTO = { active = false, fireAt = nil, endAt = 0, nextShot = 0, lastEquip = 0,
-    heldSince = nil, equipped = false, seenAt = 0, part = nil }
+    heldSince = nil, equipped = false, seenAt = 0, part = nil, reported = nil }
 
 local function endAutoShot()
     AUTO.active, AUTO.fireAt, AUTO.part = false, nil, nil
@@ -587,7 +589,7 @@ function SIL.isKnifeThrow(remote, ...)
             for i = 1, select("#", ...) do
                 local t = typeof((select(i, ...)))
                 if t == "Vector3" or t == "CFrame" then
-                    local seen = table.pack(remote, remote:IsA("RemoteFunction") and "InvokeServer" or "FireServer", ...)
+                    local seen = table.pack(remote, remote.ClassName == "RemoteFunction" and "InvokeServer" or "FireServer", ...)
                     seen.path = path
                     SIL.gunSeen = seen
                     break
@@ -1024,8 +1026,8 @@ local function refresh()
     end
 
     if S.notify then
-        if murd and murd ~= lastMurd then notify(murd.DisplayName, "murderer", "Murderer") end
-        if sher and sher ~= lastSher then notify(sher.DisplayName, "sheriff", "Sheriff") end
+        if murd and murd ~= lastMurd then notify(murd.DisplayName .. " is the Murderer", "murderer", "Murderer") end
+        if sher and sher ~= lastSher then notify(sher.DisplayName .. " is the Sheriff", "sheriff", "Sheriff") end
     end
     lastMurd, lastSher = murd, sher
 
@@ -1095,25 +1097,30 @@ local function grabGun(manual)
     if not part then
         if manual then
             local c = gunCandidates()
-            notify(#c > 0 and ("No gun drop found. Similar objects: " .. table.concat(c, ", ")) or "No dropped gun on the map")
+            notify("No dropped gun on the map")
         end
         return false
     end
     grabbing = true
     local function got() return hasTool(lp, "Gun") end
+    -- still the same living character: re-read every step, because dying (or respawning) mid-grab must stop the teleport
+    local function living()
+        local _, h, r = myParts()
+        return alive and h == hum and r == root and h.Health > 0 and r.Parent ~= nil
+    end
     local back
     pcall(function()
-        if touch then
+        if touch and living() then
             pcall(touch, root, part, 0)
             pcall(touch, root, part, 1)
             local t0 = os.clock()
-            while alive and not got() and part.Parent and os.clock() - t0 < 0.25 do task.wait(0.03) end
+            while living() and not got() and part.Parent and os.clock() - t0 < 0.25 do task.wait(0.03) end
         end
-        if alive and not got() and part.Parent and root.Parent and hum.Health > 0 then
+        if living() and not got() and part.Parent then
             back = root.CFrame
             root.CFrame = part.CFrame
             local t0 = os.clock()
-            while alive and not got() and part.Parent and os.clock() - t0 < 1 do
+            while living() and not got() and part.Parent and os.clock() - t0 < 1 do
                 if touch then
                     pcall(touch, root, part, 0)
                     pcall(touch, root, part, 1)
@@ -1122,14 +1129,14 @@ local function grabGun(manual)
             end
         end
     end)
-    if back and root.Parent then   -- always return, even if something above failed
+    if back and living() then   -- return only while still alive; a dead or respawned character is left alone
         root.CFrame = back
         root.AssemblyLinearVelocity = Vector3.zero
     end
     grabbing = false
     local ok = got()
     if ok then
-        notify("Gun grabbed")
+        notify("Gun grabbed successfully", "success")
     else
         lastGrabFail = os.clock()
         if manual then notify("Could not grab the gun") end
@@ -1166,7 +1173,7 @@ local function shootMurderer(auto)
     local hooked = installHooks()
     if not hooked and (not auto or not warnedNoHooks) then
         warnedNoHooks = true
-        notify("No hookmetamethod: the shot will only aim the camera at the murderer")
+        notify("Hooks are not supported, aiming with the camera only")
     end
     local char0 = lp.Character
     local wasHeld = char0 ~= nil and char0:FindFirstChild("Gun") ~= nil
@@ -1191,6 +1198,7 @@ local function shootMurderer(auto)
                 if ready and not fired then
                     fired = true
                     fireGun(gun, part)
+                    if not auto then notify("Shot fired successfully", "success") end
                     task.wait(0.35)
                     break
                 end
@@ -1267,27 +1275,55 @@ end
 
 -- Fires the gun at a part. If the game's own shot call was recorded (shoot once by hand), it is replayed with
 -- the part's position swapped in; otherwise the tool is activated and the Silent Aim hooks do the aiming.
+local gunHowNotified = {}
+local function gunHow(how, detail)
+    if gunHowNotified[how] then return end
+    gunHowNotified[how] = true
+    if how == "activate" then notify("Auto Shoot may not register the shot") end
+end
+
+-- Sends the gun's shot to the server. Order: 1) the game's own shot call, recorded the last time you fired by
+-- hand (learned: exact arguments, positions swapped for the target); 2) the RemoteEvent "Shoot" inside the Gun
+-- (seen in the remote list of this build) with guessed arguments (origin CFrame, target CFrame) - NOT VERIFIED;
+-- 3) Tool:Activate, which only works when the gun's own script listens to Tool.Activated.
+-- Returns true when a remote was fired.
+local function sendShot(remote, args)
+    if remote.ClassName == "RemoteFunction" then
+        task.spawn(function() pcall(function() remote:InvokeServer(table.unpack(args, 1, args.n)) end) end)
+    else
+        pcall(function() remote:FireServer(table.unpack(args, 1, args.n)) end)
+    end
+end
+
 fireGun = function(gun, part)
-    local seen = SIL.gunSeen
-    if seen and seen.path and part and part.Parent then
-        local remote = gun
-        for _, name in ipairs(seen.path) do
-            remote = remote and remote:FindFirstChild(name)
-        end
-        if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
-            local _, _, root = myParts()
-            local args = learnedArgs(seen, root and root.Position or Vector3.zero, part.Position)
-            SIL.replaying = true
-            if remote:IsA("RemoteFunction") then
-                task.spawn(function() pcall(function() remote:InvokeServer(table.unpack(args, 1, args.n)) end) end)
-            else
-                pcall(function() remote:FireServer(table.unpack(args, 1, args.n)) end)
+    local _, _, root = myParts()
+    local origin = root and root.Position or Vector3.zero
+    if part and part.Parent then
+        local seen = SIL.gunSeen
+        if seen and seen.path then
+            local remote = gun
+            for _, name in ipairs(seen.path) do
+                remote = remote and remote:FindFirstChild(name)
             end
+            if remote and (remote.ClassName == "RemoteEvent" or remote.ClassName == "RemoteFunction") then
+                SIL.replaying = true
+                sendShot(remote, learnedArgs(seen, origin, part.Position))
+                SIL.replaying = false
+                gunHow("learned", "firing the recorded shot call (" .. remote.Name .. ")")
+                return true
+            end
+        end
+        local shoot = gun:FindFirstChild("Shoot")
+        if shoot and (shoot.ClassName == "RemoteEvent" or shoot.ClassName == "RemoteFunction") then
+            SIL.replaying = true
+            sendShot(shoot, table.pack(CFrame.lookAt(origin, part.Position), CFrame.new(part.Position)))
             SIL.replaying = false
+            gunHow("guessed", "firing Gun.Shoot with default arguments (origin CFrame, target CFrame; not verified on this build)")
             return true
         end
     end
     pcall(function() gun:Activate() end)
+    gunHow("activate", "no shot remote found, falling back to Tool:Activate")
     return false
 end
 
@@ -1299,7 +1335,7 @@ local function throwKnife()
     end
     local char, hum, root = myParts()
     if not (char and hum and root and hum.Health > 0) then
-        notify("Throw Knife: your character is not ready")
+        notify("Your character is not ready")
         return false
     end
     if installHooks() then SIL.learnThrow = true end   -- from now on the game's own knife throw is recorded
@@ -1314,8 +1350,7 @@ local function throwKnife()
     end
     FORCE.role = nil
     if not (ok and part) then
-        notify(behindWall and "Throw Knife: nobody in line of sight (the closest player is behind a wall)"
-            or "Throw Knife: no other player alive within range")
+        notify(behindWall and "No player in sight" or "No player in range")
         return false
     end
 
@@ -1331,12 +1366,12 @@ local function throwKnife()
             local t0 = os.clock()
             while alive and knife.Parent ~= lp.Character and os.clock() - t0 < 0.8 do task.wait(0.03) end
             if knife.Parent ~= lp.Character then
-                notify("Throw Knife: the knife could not be equipped")
+                notify("Could not equip the knife")
                 return
             end
             if not wasEquipped then task.wait(0.15) end   -- let the knife's own script finish its setup
             if not part.Parent then
-                notify("Throw Knife: the target is gone")
+                notify("The target is gone")
                 return
             end
 
@@ -1368,8 +1403,7 @@ local function throwKnife()
                 for _, d in ipairs(knife:GetDescendants()) do
                     if d:IsA("RemoteEvent") or d:IsA("RemoteFunction") then names[#names + 1] = d.Name end
                 end
-                notify("Throw remote not found. Throw once by hand so it can be learned. Knife remotes: "
-                    .. (#names > 0 and table.concat(names, ", ") or "none"))
+                notify("Could not find the knife throw. Throw once by hand and try again")
                 return
             end
 
@@ -1380,8 +1414,9 @@ local function throwKnife()
             else
                 remote:FireServer(table.unpack(args, 1, args.n))
             end
+            notify("Throw Knife successful", "success")
         end)
-        if not ok3 then notify("Throw Knife error: " .. tostring(err)) end
+        if not ok3 then notify("Throw Knife failed") end
         throwing = false
     end)
     return true
@@ -1392,12 +1427,12 @@ local function serverHop()
         local ok, body = pcall(httpGet, "https://games.roblox.com/v1/games/" .. game.PlaceId
             .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true")
         if not ok then
-            notify("Failed to fetch the server list")
+            notify("Could not load the server list")
             return
         end
         local ok2, data = pcall(function() return HttpService:JSONDecode(body) end)
         if not ok2 or not data or not data.data then
-            notify("Invalid server list")
+            notify("Could not read the server list")
             return
         end
         local list = {}
@@ -1437,7 +1472,7 @@ end
 local FLING_BATCH_MAX = 12
 
 local function setFlingMode(on)
-    if on and not FLING.active and S.antiFling then notify("Anti Fling paused until you stop the fling") end
+    if on and not FLING.active and S.antiFling then notify("Anti Fling paused while flinging") end
     FLING.active = on
 end
 
@@ -1451,9 +1486,9 @@ end
 
 -- returns the reason why a fling cannot start now, or nil
 local function flingBlocked()
-    if FLING.busy then return "Already flinging (press Stop Fling to cancel)" end
-    if S.fly then return "Turn Fly off before flinging" end
-    if S.coins then return "Turn Auto Farm Coins off before flinging" end
+    if FLING.busy then return "Already flinging" end
+    if S.fly then return "Turn Fly off first" end
+    if S.coins then return "Turn Auto Farm Coins off first" end
     local _, hum, root = myParts()
     if not (hum and root) or hum.Health <= 0 then return "You are dead" end
     return nil
@@ -1510,7 +1545,7 @@ local function flingPlayer(plr, quiet, inBatch, homeCF)
         local function running()
             if not (alive and not FLING.stop and root.Parent and troot.Parent) then return false end
             if hum.Health <= 0 or thum.Health <= 0 then return false end
-            if thum.Sit then reason = plr.DisplayName .. " is sitting and cannot be flung" return false end
+            if thum.Sit then reason = plr.DisplayName .. " is sitting" return false end
             return os.clock() - t0 < limit
         end
         -- one frame: put the body at an offset of the target part, spinning, then check the result
@@ -1594,7 +1629,7 @@ end
 local function flingAndReport(plr)
     task.spawn(function()
         local ok = flingPlayer(plr)
-        if ok then notify("Flung " .. plr.DisplayName) end
+        if ok then notify("Flung " .. plr.DisplayName .. " successfully", "success") end
     end)
 end
 
@@ -1640,7 +1675,7 @@ local function flingAll()
             end
         end)
         FLING.busy = false
-        notify("Fling All done: " .. count .. " flung")
+        notify("Fling All successful: " .. count .. " flung", "success")
     end)
 end
 
@@ -1730,11 +1765,161 @@ end
 
 local function flingSelected()
     if not (FLING.sel and FLING.sel.Parent) then
-        notify("Pick a player first (Next Player)")
+        notify("Select a player first")
         return
     end
     flingAndReport(FLING.sel)
 end
+
+-- ------------------------------------------------------------
+-- Run animation (Player tab). Rewrites the AnimationId inside the character's own Animate script (run and walk
+-- sets) and restarts that script, so the game plays the animation itself and everyone sees it. R15 only.
+-- The preset ids are from memory and NOT verified on this build: every id is test-loaded before it is applied, and
+-- the original ids are restored when it does not load. "Nearest Player" copies the run animation another player
+-- is wearing right now, so it needs no id at all.
+-- ------------------------------------------------------------
+local RUN_PRESETS = {
+    Ninja       = "rbxassetid://656118852",
+    Cartoony    = "rbxassetid://742638842",
+    Zombie      = "rbxassetid://616163682",
+    Robot       = "rbxassetid://616091570",
+    Levitation  = "rbxassetid://616010382",
+    Stylish     = "rbxassetid://616140816",
+    Superhero   = "rbxassetid://616117076",
+    Toy         = "rbxassetid://782842708",
+    Werewolf    = "rbxassetid://1083216690",
+    Astronaut   = "rbxassetid://891636393",
+    Bubbly      = "rbxassetid://910025107",
+    Mage        = "rbxassetid://707861613",
+    Elder       = "rbxassetid://845386501",
+    Knight      = "rbxassetid://657564596",
+    Pirate      = "rbxassetid://750783738",
+}
+local RUN_CHOICES = { "Off" }
+do
+    local names = {}
+    for n in pairs(RUN_PRESETS) do names[#names + 1] = n end
+    table.sort(names)
+    for _, n in ipairs(names) do RUN_CHOICES[#RUN_CHOICES + 1] = n end
+    RUN_CHOICES[#RUN_CHOICES + 1] = "Nearest Player"
+end
+local origAnimIds = setmetatable({}, { __mode = "k" })   -- Animation instance -> id it had before we changed it
+local copiedRunId   -- last id taken from "Nearest Player", reused after a respawn
+
+local function nearestPlayerRunId()
+    local _, _, root = myParts()
+    if not root then return nil end
+    local bestId, bestDist
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local char = plr ~= lp and plr.Character
+        local theirRoot = char and char:FindFirstChild("HumanoidRootPart")
+        local animate = char and char:FindFirstChild("Animate")
+        local run = animate and animate:FindFirstChild("run")
+        local anim = run and run:FindFirstChildWhichIsA("Animation")
+        if theirRoot and anim and anim.AnimationId ~= "" then
+            local d = (theirRoot.Position - root.Position).Magnitude
+            if not bestDist or d < bestDist then bestId, bestDist = anim.AnimationId, d end
+        end
+    end
+    return bestId
+end
+
+local function runIdFor(choice, fresh)
+    if choice == "Nearest Player" then
+        if fresh or not copiedRunId then copiedRunId = nearestPlayerRunId() end
+        return copiedRunId
+    end
+    return RUN_PRESETS[choice]
+end
+
+local function animationLoads(hum, id)
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if not animator then return true end   -- nothing to test with
+    local anim = Instance.new("Animation")
+    anim.AnimationId = id
+    local ok, track = pcall(function() return animator:LoadAnimation(anim) end)
+    local length = 0
+    if ok and track then
+        local t0 = os.clock()
+        while track.Length == 0 and os.clock() - t0 < 2 do task.wait(0.05) end
+        length = track.Length
+        pcall(function() track:Destroy() end)
+    end
+    anim:Destroy()
+    return length > 0
+end
+
+local function applyRunAnimation(quiet, fresh)
+    local char, hum = myParts()
+    if not (char and hum) or hum.Health <= 0 then
+        if not quiet then notify("Your character is not ready") end
+        return
+    end
+    local animate = char:FindFirstChild("Animate") or char:WaitForChild("Animate", 3)
+    if not animate then
+        if not quiet then notify("This game has no Animate script") end
+        return
+    end
+    local anims = {}
+    for _, setName in ipairs({ "run", "walk" }) do
+        local folder = animate:FindFirstChild(setName)
+        if folder then
+            for _, a in ipairs(folder:GetChildren()) do
+                if a:IsA("Animation") then anims[#anims + 1] = a end
+            end
+        end
+    end
+    if #anims == 0 then
+        if not quiet then notify("No run animation found on this character") end
+        return
+    end
+
+    local choice = S.runAnim
+    local id
+    if choice ~= "Off" then
+        if hum.RigType ~= Enum.HumanoidRigType.R15 then
+            if not quiet then notify("Run animations need an R15 character") end
+            return
+        end
+        id = runIdFor(choice, fresh)
+        if not id then
+            notify(choice == "Nearest Player" and "No other player to copy from" or "No animation found")
+            return
+        end
+        if not animationLoads(hum, id) then
+            notify("Could not load that animation")
+            id = nil
+        end
+    end
+
+    animate.Disabled = true
+    for _, a in ipairs(anims) do
+        if not origAnimIds[a] then origAnimIds[a] = a.AnimationId end
+        a.AnimationId = id or origAnimIds[a]
+    end
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if animator then
+        for _, tr in ipairs(animator:GetPlayingAnimationTracks()) do
+            local pr = tr.Priority
+            if pr == Enum.AnimationPriority.Core or pr == Enum.AnimationPriority.Idle
+                or pr == Enum.AnimationPriority.Movement then
+                pcall(function() tr:Stop(0.1) end)
+            end
+        end
+    end
+    animate.Disabled = false
+    if not quiet then
+        notify(id and ("Run animation set: " .. choice) or "Run animation restored", id and "success" or "info")
+    end
+end
+
+-- the new character after a respawn has a fresh Animate script: apply the chosen animation again
+track(lp.CharacterAdded:Connect(function()
+    if S.runAnim ~= "Off" then
+        task.wait(0.6)
+        pcall(applyRunAnimation, true)
+    end
+end))
 
 -- ------------------------------------------------------------
 -- Menu spec (used by Slate AND by the simple menu)
@@ -1768,7 +1953,11 @@ local UI = {
     } },
     { tab = "Combat", icon = "crosshair", sections = {
         { name = "Sheriff", items = {
-            { "toggle", "Auto Shoot Murderer", "autoShoot" },
+            { "toggle", "Auto Shoot Murderer", "autoShoot", function(v)
+                if v and not installHooks() then
+                    notify("Hooks are not supported, Auto Shoot will use the camera only")
+                end
+            end },
             { "toggle", "Auto Grab Gun", "gun" },
         } },
         { name = "Murderer", items = {
@@ -1780,7 +1969,7 @@ local UI = {
             { "toggle", "Silent Aim", "silent", function(v)
                 if v and not installHooks() then
                     S.silent = false
-                    notify("Silent Aim unavailable: your executor has no hookmetamethod")
+                    notify("Silent Aim is not supported by your executor")
                 end
             end },
             { "drop", "Target Part", "silentPart", { "Head", "Torso" } },
@@ -1791,67 +1980,7 @@ local UI = {
             { "toggle", "Shoot / Throw Button", "quickButton" },
         } },
     } },
-    { tab = "Fling", icon = "wind", sections = {
-        { name = "Quick Fling", items = {
-            { "button", "Fling Murderer", function() flingRole("Murderer") end },
-            { "button", "Fling Sheriff", function() flingRole("Sheriff") end },
-            { "button", "Fling Nearest", flingNearest },
-            { "button", "Fling All", flingAll },
-            { "button", "Stop Fling", function()
-                FLING.stop = true
-                setFlingMode(S.loopMurd or S.loopSher)   -- fling mode ends here (unless a loop is still on)
-            end },
-        } },
-        { name = "Fling Player", items = {
-            { "players", "Select Player", pickPlayer },
-            { "label", "Selected: none", "flingsel" },
-            { "button", "Fling Selected", flingSelected },
-            { "button", "Previous Player", function() cycleSelected(-1) end },
-            { "button", "Next Player", function() cycleSelected(1) end },
-            { "button", "Refresh Players", function()
-                local n = refreshPlayerList()
-                notify("Players in the server: " .. n)
-            end },
-        } },
-        { name = "Loop Fling", items = {
-            { "toggle", "Loop Fling Murderer", "loopMurd", function(v)
-                if v then
-                    setFlingMode(true)
-                elseif not (S.loopMurd or S.loopSher) then
-                    FLING.stop = true
-                    setFlingMode(false)
-                end
-            end },
-            { "toggle", "Loop Fling Sheriff", "loopSher", function(v)
-                if v then
-                    setFlingMode(true)
-                elseif not (S.loopMurd or S.loopSher) then
-                    FLING.stop = true
-                    setFlingMode(false)
-                end
-            end },
-        } },
-        { name = "Protection", items = {
-            { "toggle", "Anti Fling", "antiFling" },
-            { "toggle", "Anti Void", "antiVoid" },
-        } },
-    } },
-    { tab = "Visuals", icon = "eye", sections = {
-        { name = "Players", items = {
-            { "toggle", "Player ESP", "esp", function(v)
-                if not v then clearAll() end
-            end },
-            { "toggle", "Show Names", "labels" },
-            { "toggle", "Show Distance", "dist" },
-            { "toggle", "Role Notifier", "notify" },
-        } },
-        { name = "World", items = {
-            { "toggle", "Coin ESP", "coinEsp" },
-            { "toggle", "Gun ESP", "gunEsp" },
-            { "toggle", "Fullbright", "fullbright", function() applyLighting() end },
-        } },
-    } },
-    { tab = "Movement", icon = "user", sections = {
+    { tab = "Player", icon = "user", sections = {
         { name = "Speed & Jump", items = {
             { "toggle", "WalkSpeed", "speed", function(v)
                 if not v then
@@ -1876,9 +2005,72 @@ local UI = {
             { "toggle", "Infinite Jump", "infjump" },
             { "toggle", "Noclip", "noclip" },
         } },
+        { name = "Run Animation", items = {
+            { "drop", "Run Animation", "runAnim", RUN_CHOICES, function() task.spawn(applyRunAnimation, false, true) end },
+        } },
         { name = "Teleport", items = {
             { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
             { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
+        } },
+    } },
+    { tab = "Visuals", icon = "eye", sections = {
+        { name = "Players", items = {
+            { "toggle", "Player ESP", "esp", function(v)
+                if not v then clearAll() end
+            end },
+            { "toggle", "Show Names", "labels" },
+            { "toggle", "Show Distance", "dist" },
+            { "toggle", "Role Notifier", "notify" },
+        } },
+        { name = "World", items = {
+            { "toggle", "Coin ESP", "coinEsp" },
+            { "toggle", "Gun ESP", "gunEsp" },
+            { "toggle", "Fullbright", "fullbright", function() applyLighting() end },
+        } },
+    } },
+    { tab = "Fling", icon = "wind", sections = {
+        { name = "Quick Fling", items = {
+            { "button", "Fling Murderer", function() flingRole("Murderer") end },
+            { "button", "Fling Sheriff", function() flingRole("Sheriff") end },
+            { "button", "Fling Nearest", flingNearest },
+            { "button", "Fling All", flingAll },
+            { "button", "Stop Fling", function()
+                FLING.stop = true
+                setFlingMode(S.loopMurd or S.loopSher)   -- fling mode ends here (unless a loop is still on)
+            end },
+        } },
+        { name = "Fling Player", items = {
+            { "players", "Select Player", pickPlayer },
+            { "label", "Selected: none", "flingsel" },
+            { "button", "Fling Selected", flingSelected },
+            { "button", "Previous Player", function() cycleSelected(-1) end },
+            { "button", "Next Player", function() cycleSelected(1) end },
+            { "button", "Refresh Players", function()
+                local n = refreshPlayerList()
+                notify(n .. " players in the server")
+            end },
+        } },
+        { name = "Loop Fling", items = {
+            { "toggle", "Loop Fling Murderer", "loopMurd", function(v)
+                if v then
+                    setFlingMode(true)
+                elseif not (S.loopMurd or S.loopSher) then
+                    FLING.stop = true
+                    setFlingMode(false)
+                end
+            end },
+            { "toggle", "Loop Fling Sheriff", "loopSher", function(v)
+                if v then
+                    setFlingMode(true)
+                elseif not (S.loopMurd or S.loopSher) then
+                    FLING.stop = true
+                    setFlingMode(false)
+                end
+            end },
+        } },
+        { name = "Protection", items = {
+            { "toggle", "Anti Fling", "antiFling" },
+            { "toggle", "Anti Void", "antiVoid" },
         } },
     } },
     { tab = "Farm", icon = "coins", sections = {
@@ -1996,9 +2188,10 @@ local function saveSettings()
 end
 
 loadSettings()
+if S.autoShoot then installHooks() end   -- a saved Auto Shoot needs the hooks to record the gun's shot call
 if S.silent and not installHooks() then   -- the hooks are not installed by a saved toggle alone
     S.silent = false
-    notify("Silent Aim was on in your saved settings but your executor has no hookmetamethod")
+    notify("Silent Aim is not supported by your executor")
 end
 saved = currentSettings()
 
@@ -2088,7 +2281,7 @@ local function buildSlate()
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
-            Size = UDim2.fromOffset(420, 300), MinSize = Vector2.new(420, 300),
+            Size = UDim2.fromOffset(540, 360), MinSize = Vector2.new(480, 320),
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
@@ -2485,7 +2678,7 @@ if slateUi then
     ui = slateUi
     menuKind = "Slate"
 else
-    notify("Slate unavailable (" .. tostring(slateErr):sub(1, 90) .. "). Using the simple menu.")
+    notify("Could not load the main menu, using the simple menu")
     ui = buildFallback()
     menuKind = "simple menu"
 end
@@ -2790,8 +2983,29 @@ loop(0.2, function()
 end)
 
 -- auto grab gun (the gun drops when the sheriff dies; checked every 0.1 s)
+-- After you die the character respawns (lobby) while the round and the gun drop may still exist, so Auto Grab
+-- stays off until the next round: the murderer of the round you died in has to change, or the round has to end.
+local GRABBLOCK = { on = false, murd = nil }
+local function watchDeathForGrab(char)
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+    track(hum.Died:Connect(function()
+        GRABBLOCK.on, GRABBLOCK.murd = true, lastMurd
+    end))
+end
+watchDeathForGrab(lp.Character)
+track(lp.CharacterAdded:Connect(function(char)
+    task.defer(watchDeathForGrab, char)
+end))
+
 loop(0.1, function()
-    if S.gun then grabGun(false) end
+    if GRABBLOCK.on then
+        local m = GRABBLOCK.murd
+        local newRound = (m == nil or m == lp) and (lastMurd ~= nil and lastMurd ~= lp and lastMurd ~= m)
+            or (m ~= nil and m ~= lp and (lastMurd == nil or lastMurd ~= m))
+        if newRound then GRABBLOCK.on = false end
+    end
+    if S.gun and not GRABBLOCK.on then grabGun(false) end
 end)
 
 -- movement: speed, jump, fly
@@ -2936,6 +3150,8 @@ end))
 -- ------------------------------------------------------------
 env.__MM2_CLEANUP = function()
     pcall(saveSettings)   -- first: the resets below must not be saved
+    S.runAnim = "Off"
+    pcall(applyRunAnimation, true)
     alive = false
     FLING.stop = true
     S.silent = false
@@ -2970,4 +3186,5 @@ env.__MM2_CLEANUP = function()
     env.__MM2_CLEANUP = nil
 end
 
-notify("MM2 Hub loaded (" .. (slateUi and "Slate" or "simple menu") .. ").")
+if S.runAnim ~= "Off" then task.spawn(applyRunAnimation, true) end
+notify("MM2 Hub loaded successfully", "success")
