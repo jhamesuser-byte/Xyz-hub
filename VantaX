@@ -47,7 +47,7 @@ local S = {
     -- animations
     runAnim = "Off",
     -- menu window size (Slate): remembered between sessions
-    winW = 540, winH = 360,
+    winW = 540, winH = 360, menuScale = 100,
 }
 
 local CFG = {
@@ -1945,6 +1945,8 @@ end))
 -- slider : { "slider", name, key, min, max, step, callback }
 -- button : { "button", name, callback }
 -- ------------------------------------------------------------
+local applyMenuScale   -- assigned next to the Slate window code
+
 local UI = {
     { tab = "Status", icon = "activity", sections = {
         { name = "Round", items = {
@@ -2107,6 +2109,9 @@ local UI = {
         } },
     } },
     { tab = "Misc", icon = "wrench", sections = {
+        { name = "Menu", items = {
+            { "slider", "Menu Size (%)", "menuScale", 50, 150, 5, function() applyMenuScale() end },
+        } },
         { name = "Utilities", items = {
             { "toggle", "Anti-AFK", "antiafk" },
             { "button", "Rejoin", rejoin },
@@ -2324,16 +2329,32 @@ local function findSlateFrame(before, reqW, reqH)
         end
         if best then
             slateFrame, slateDW, slateDH = best, best.AbsoluteSize.X - reqW, best.AbsoluteSize.Y - reqH
+            applyMenuScale()
             return
         end
     end
 end
 
+-- Menu Size (Misc tab): a UIScale inside the window frame scales the whole menu
+applyMenuScale = function()
+    local f = slateFrame
+    if not (f and f.Parent) then return end
+    local sc = f:FindFirstChild("MM2MenuScale")
+    if not sc then
+        sc = Instance.new("UIScale")
+        sc.Name = "MM2MenuScale"
+        sc.Parent = f
+    end
+    sc.Scale = math.clamp(S.menuScale, 50, 150) / 100
+end
+
 local function trackWindowSize()
     local f = slateFrame
     if not (f and f.Parent) then return end
-    local w = math.floor(f.AbsoluteSize.X - slateDW + 0.5)
-    local h = math.floor(f.AbsoluteSize.Y - slateDH + 0.5)
+    local sc = f:FindFirstChild("MM2MenuScale")
+    local k = sc and sc.Scale or 1   -- the size is saved without the Menu Size factor
+    local w = math.floor(f.AbsoluteSize.X / k - slateDW + 0.5)
+    local h = math.floor(f.AbsoluteSize.Y / k - slateDH + 0.5)
     -- sizes outside the allowed range (hidden menu, collapsed title bar) are not remembered
     if w >= RANGE.winW[1] and w <= RANGE.winW[2] and h >= RANGE.winH[1] and h <= RANGE.winH[2]
         and (math.abs(w - S.winW) >= 2 or math.abs(h - S.winH) >= 2) then
@@ -2354,7 +2375,12 @@ local function buildSlate()
     pcall(function() Slate.Theme.Preset("Violet") end)
     pcall(function() Slate:SetFontFamily("JosefinSans") end)
 
-    local reqW, reqH = S.winW, S.winH
+    -- the window must fit on the screen with its resize grip (bottom-right corner) visible: on a phone the top bar
+    -- takes ~56 px, so the saved or default size is limited to the viewport minus that margin
+    local cam = workspace.CurrentCamera
+    local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+    local reqW = math.clamp(S.winW, RANGE.winW[1], math.max(RANGE.winW[1], vp.X - 140))
+    local reqH = math.clamp(S.winH, RANGE.winH[1], math.max(RANGE.winH[1], vp.Y - 120))
     local guisBefore = guiChildren()
     local okW, win = pcall(function()
         return Slate:CreateWindow({
