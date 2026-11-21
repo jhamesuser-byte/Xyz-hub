@@ -1349,9 +1349,11 @@ local UI = {
         { name = "Loop Fling", items = {
             { "toggle", "Loop Fling Murderer", "loopMurd" },
             { "toggle", "Loop Fling Sheriff", "loopSher" },
-        } },
-        { name = "Settings", items = {
             { "slider", "Fling Duration (s)", "flingTime", 1, 8, 1 },
+        } },
+        { name = "Protection", items = {
+            { "toggle", "Anti Fling", "antiFling" },
+            { "toggle", "Anti Void", "antiVoid" },
         } },
     } },
     { tab = "Visuals", icon = "eye", sections = {
@@ -1397,10 +1399,6 @@ local UI = {
         { name = "Teleport", items = {
             { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
             { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
-        } },
-        { name = "Protection", items = {
-            { "toggle", "Anti Fling", "antiFling" },
-            { "toggle", "Anti Void", "antiVoid" },
         } },
     } },
     { tab = "Farm", icon = "coins", sections = {
