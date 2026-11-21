@@ -2288,127 +2288,45 @@ local function slateLabelSetter(id, lbl)
     end
 end
 
--- Slate does not remember its window size, so the size is read back from its frame and saved with the settings.
-local slateFrame, slateDW, slateDH
+-- Menu size. The Slate window object exposes its frame (win.root, the same frame its resize grip changes), so the
+-- size is read and written there directly: Slate itself does not remember it between sessions, this script does.
+local slateWin
+local BASE_W, BASE_H = 540, 360   -- 100 % of the Menu Size slider
 
-local function guiRoots()
-    local roots = {}
-    pcall(function() if typeof(gethui) == "function" then roots[#roots + 1] = gethui() end end)
-    pcall(function() roots[#roots + 1] = game:GetService("CoreGui") end)
-    pcall(function() roots[#roots + 1] = lp:FindFirstChild("PlayerGui") end)
-    return roots
-end
-
-local function guiChildren()
-    local set = {}
-    for _, r in ipairs(guiRoots()) do
-        local ok, kids = pcall(function() return r:GetChildren() end)
-        if ok then for _, k in ipairs(kids) do set[k] = true end end
-    end
-    return set
-end
-
-local slateReqW, slateReqH = 540, 360
-
--- The window is the biggest ancestor of its own subtitle label that is still smaller than the screen (the ancestors
--- above it are full-screen containers or the backdrop).
-local function findWindowByTitle()
+local function screenSize()
     local cam = workspace.CurrentCamera
     local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
-    for _, r in ipairs(guiRoots()) do
-        local ok, kids = pcall(function() return r:GetChildren() end)
-        for _, g in ipairs(ok and kids or {}) do
-            if g:IsA("ScreenGui") then
-                local okD, descendants = pcall(function() return g:GetDescendants() end)
-                for _, d in ipairs(okD and descendants or {}) do
-                    if d:IsA("TextLabel") and d.Text == "Murder Mystery 2" then
-                        local best, node = nil, d.Parent
-                        while node and node ~= g do
-                            if node:IsA("GuiObject") then
-                                local sz = node.AbsoluteSize
-                                if sz.X < vp.X * 0.97 and sz.Y < vp.Y * 0.97
-                                    and (not best or sz.X * sz.Y > best.AbsoluteSize.X * best.AbsoluteSize.Y) then
-                                    best = node
-                                end
-                            end
-                            node = node.Parent
-                        end
-                        if best then return best end
-                    end
-                end
-            end
-        end
-    end
-    return nil
+    local okI, inset = pcall(function() return game:GetService("GuiService"):GetGuiInset() end)
+    return vp + (okI and typeof(inset) == "Vector2" and inset or Vector2.zero)
 end
 
--- Finds the window frame: by its subtitle first, then (fallback) the object whose size is closest to the requested size.
-local function findSlateFrame(before, reqW, reqH)
-    slateReqW, slateReqH = reqW, reqH
-    for _ = 1, 10 do
-        task.wait(0.4)
-        local byTitle = findWindowByTitle()
-        if byTitle then
-            slateFrame, slateDW, slateDH = byTitle, byTitle.AbsoluteSize.X - reqW, byTitle.AbsoluteSize.Y - reqH
-            applyMenuScale()
-            return
-        end
-        local best, bestScore
-        for _, r in ipairs(guiRoots()) do
-            local ok, kids = pcall(function() return r:GetChildren() end)
-            for _, g in ipairs(ok and kids or {}) do
-                if g:IsA("ScreenGui") and not before[g] then
-                    for _, d in ipairs(g:GetDescendants()) do
-                        if d:IsA("GuiObject") then
-                            local sz = d.AbsoluteSize
-                            local score = math.abs(sz.X - reqW) + math.abs(sz.Y - reqH)
-                            if score <= 60 and (not bestScore or score < bestScore) then best, bestScore = d, score end
-                        end
-                    end
-                end
-            end
-        end
-        if best then
-            slateFrame, slateDW, slateDH = best, best.AbsoluteSize.X - reqW, best.AbsoluteSize.Y - reqH
-            applyMenuScale()
-            return
-        end
-    end
-end
-
--- Menu Size (Misc tab): a UIScale inside the window frame scales the whole menu
+-- Menu Size (Misc tab): resizes the window like its resize grip would, never beyond the screen
 applyMenuScale = function()
-    if not (slateFrame and slateFrame.Parent) then
-        local found = findWindowByTitle()
-        if found then
-            slateFrame, slateDW, slateDH = found, found.AbsoluteSize.X - slateReqW, found.AbsoluteSize.Y - slateReqH
-        end
-    end
-    local f = slateFrame
-    if not (f and f.Parent) then
+    local win = slateWin
+    if not win then return end   -- simple menu or not built yet
+    if not (win.root and win.root.Parent) then
         notify("Menu Size is not supported by this menu")
         return
     end
-    local sc = f:FindFirstChild("MM2MenuScale")
-    if not sc then
-        sc = Instance.new("UIScale")
-        sc.Name = "MM2MenuScale"
-        sc.Parent = f
-    end
-    sc.Scale = math.clamp(S.menuScale, 50, 150) / 100
+    local pct = math.clamp(S.menuScale, 50, 150) / 100
+    local screen = screenSize()
+    local minW, minH = 380, 260
+    pcall(function() minW, minH = win.MinSize.X, win.MinSize.Y end)
+    pcall(function() minW = math.max(minW, win:_contentFloor()) end)
+    local w = math.clamp(math.floor(BASE_W * pct + 0.5), minW, math.max(minW, screen.X - 20))
+    local h = math.clamp(math.floor(BASE_H * pct + 0.5), minH, math.max(minH, screen.Y - 20))
+    win.root.Size = UDim2.fromOffset(w, h)
+    pcall(function() win:_clampToViewport() end)   -- keeps the window on screen after the change
 end
 
 local function trackWindowSize()
-    local f = slateFrame
-    if not (f and f.Parent) then return end
-    local sc = f:FindFirstChild("MM2MenuScale")
-    local k = sc and sc.Scale or 1   -- the size is saved without the Menu Size factor
-    local w = math.floor(f.AbsoluteSize.X / k - slateDW + 0.5)
-    local h = math.floor(f.AbsoluteSize.Y / k - slateDH + 0.5)
-    -- sizes outside the allowed range (hidden menu, collapsed title bar) are not remembered
+    local win = slateWin
+    if not (win and win.root and win.root.Parent) or win.Minimised then return end
+    local w, h = win.root.Size.X.Offset, win.root.Size.Y.Offset
+    -- sizes outside the allowed range (hidden or collapsed menu) are not remembered
     if w >= RANGE.winW[1] and w <= RANGE.winW[2] and h >= RANGE.winH[1] and h <= RANGE.winH[2]
         and (math.abs(w - S.winW) >= 2 or math.abs(h - S.winH) >= 2) then
-        S.winW, S.winH = w, h
+        S.winW, S.winH = math.floor(w), math.floor(h)
     end
 end
 
@@ -2425,13 +2343,10 @@ local function buildSlate()
     pcall(function() Slate.Theme.Preset("Violet") end)
     pcall(function() Slate:SetFontFamily("JosefinSans") end)
 
-    -- the window must fit on the screen with its resize grip (bottom-right corner) visible: on a phone the top bar
-    -- takes ~56 px, so the saved or default size is limited to the viewport minus that margin
-    local cam = workspace.CurrentCamera
-    local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
-    local reqW = math.clamp(S.winW, RANGE.winW[1], math.max(RANGE.winW[1], vp.X - 140))
-    local reqH = math.clamp(S.winH, RANGE.winH[1], math.max(RANGE.winH[1], vp.Y - 120))
-    local guisBefore = guiChildren()
+    -- the saved size must fit on the screen with the resize grip (bottom-right corner) visible
+    local screen = screenSize()
+    local reqW = math.clamp(S.winW, RANGE.winW[1], math.max(RANGE.winW[1], screen.X - 20))
+    local reqH = math.clamp(S.winH, RANGE.winH[1], math.max(RANGE.winH[1], screen.Y - 20))
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
@@ -2441,7 +2356,7 @@ local function buildSlate()
     end)
     if not okW or not win then return nil, "creating the window: " .. tostring(win) end
     pcall(function() win:SetBackdrop("aurora") end)
-    task.spawn(findSlateFrame, guisBefore, reqW, reqH)
+    slateWin = win
 
     local created = 0
     for _, t in ipairs(UI) do
