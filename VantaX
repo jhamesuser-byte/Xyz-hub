@@ -2308,10 +2308,51 @@ local function guiChildren()
     return set
 end
 
--- Finds the window frame among the ScreenGuis created by Slate: the object whose size is closest to the size we asked for.
+local slateReqW, slateReqH = 540, 360
+
+-- The window is the biggest ancestor of its own subtitle label that is still smaller than the screen (the ancestors
+-- above it are full-screen containers or the backdrop).
+local function findWindowByTitle()
+    local cam = workspace.CurrentCamera
+    local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+    for _, r in ipairs(guiRoots()) do
+        local ok, kids = pcall(function() return r:GetChildren() end)
+        for _, g in ipairs(ok and kids or {}) do
+            if g:IsA("ScreenGui") then
+                local okD, descendants = pcall(function() return g:GetDescendants() end)
+                for _, d in ipairs(okD and descendants or {}) do
+                    if d:IsA("TextLabel") and d.Text == "Murder Mystery 2" then
+                        local best, node = nil, d.Parent
+                        while node and node ~= g do
+                            if node:IsA("GuiObject") then
+                                local sz = node.AbsoluteSize
+                                if sz.X < vp.X * 0.97 and sz.Y < vp.Y * 0.97
+                                    and (not best or sz.X * sz.Y > best.AbsoluteSize.X * best.AbsoluteSize.Y) then
+                                    best = node
+                                end
+                            end
+                            node = node.Parent
+                        end
+                        if best then return best end
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+-- Finds the window frame: by its subtitle first, then (fallback) the object whose size is closest to the requested size.
 local function findSlateFrame(before, reqW, reqH)
+    slateReqW, slateReqH = reqW, reqH
     for _ = 1, 10 do
         task.wait(0.4)
+        local byTitle = findWindowByTitle()
+        if byTitle then
+            slateFrame, slateDW, slateDH = byTitle, byTitle.AbsoluteSize.X - reqW, byTitle.AbsoluteSize.Y - reqH
+            applyMenuScale()
+            return
+        end
         local best, bestScore
         for _, r in ipairs(guiRoots()) do
             local ok, kids = pcall(function() return r:GetChildren() end)
@@ -2337,8 +2378,17 @@ end
 
 -- Menu Size (Misc tab): a UIScale inside the window frame scales the whole menu
 applyMenuScale = function()
+    if not (slateFrame and slateFrame.Parent) then
+        local found = findWindowByTitle()
+        if found then
+            slateFrame, slateDW, slateDH = found, found.AbsoluteSize.X - slateReqW, found.AbsoluteSize.Y - slateReqH
+        end
+    end
     local f = slateFrame
-    if not (f and f.Parent) then return end
+    if not (f and f.Parent) then
+        notify("Menu Size is not supported by this menu")
+        return
+    end
     local sc = f:FindFirstChild("MM2MenuScale")
     if not sc then
         sc = Instance.new("UIScale")
