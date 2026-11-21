@@ -34,7 +34,7 @@ local S = {
     -- weapons
     autoShoot = false, aura = false, auraRange = 14,
     -- farm
-    coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60, coinNoclip = true,
+    coins = false, coinMode = "Teleport", coinTpSpeed = 8, coinDelay = 120, coinSpeed = 60, coinNoclip = true,
     gun = false,
     -- movement
     speed = false, speedVal = 30, jump = false, jumpVal = 80,
@@ -67,6 +67,7 @@ local COLORS = {
     Innocent = Color3.fromRGB(80, 230, 120),
 }
 local touch = (typeof(firetouchinterest) == "function") and firetouchinterest or nil
+local flushSettings = function() end   -- becomes saveSettings further down
 local function yn(v) return v and "yes" or "no" end
 local EXEC = "Hooks: " .. yn(typeof(hookmetamethod) == "function" and typeof(getnamecallmethod) == "function")
     .. " | Touch: " .. yn(touch ~= nil)
@@ -1041,19 +1042,41 @@ end
 track(Players.PlayerRemoving:Connect(function(p)
     clearMark(p)
     ROLE[p] = nil
+    if p == lp then pcall(flushSettings) end   -- leaving the game: keep the last changes (Menu Size included)
 end))
 
 -- ------------------------------------------------------------
 -- Action functions
 -- ------------------------------------------------------------
 local curTween
-local coinTries = setmetatable({}, { __mode = "k" })   -- coins we already visited (skipped after 3 tries, e.g. bag full)
+-- Coins already visited: a visited coin is never visited again. A collected coin can stay in the container, so
+-- without this the farm kept going back to the coin it had just collected (it is the nearest one: distance 0).
+local coinTries = setmetatable({}, { __mode = "k" })
+-- A free coin carries a TouchInterest, which the server removes once the coin is collected. After any coin has
+-- been seen with one, a coin without one counts as already collected (taken by another player or by us).
+-- This comes from memory of the game, not from a measurement here: if no coin ever shows a TouchInterest, only
+-- the visited-once rule applies.
+local coinSignal = false
+local function hasTouch(c)
+    return c:FindFirstChild("TouchInterest") ~= nil or c:FindFirstChildOfClass("TouchTransmitter") ~= nil
+end
+
 local function nearestCoin(root)
     local container = coinContainer()
     if not container then return nil, math.huge end
+    local coins = container:GetDescendants()
+    if not coinSignal then
+        for _, c in ipairs(coins) do
+            if c:IsA("BasePart") and c.Name == "Coin_Server" and hasTouch(c) then
+                coinSignal = true
+                break
+            end
+        end
+    end
     local best, bd = nil, math.huge
-    for _, c in ipairs(container:GetDescendants()) do
-        if c:IsA("BasePart") and c.Name == "Coin_Server" and (coinTries[c] or 0) < 3 then
+    for _, c in ipairs(coins) do
+        if c:IsA("BasePart") and c.Name == "Coin_Server" and not coinTries[c]
+            and (not coinSignal or hasTouch(c)) then
             local d = (c.Position - root.Position).Magnitude
             if d < bd then best, bd = c, d end
         end
@@ -1423,6 +1446,7 @@ local function throwKnife()
 end
 
 local function serverHop()
+    pcall(flushSettings)
     task.spawn(function()
         local ok, body = pcall(httpGet, "https://games.roblox.com/v1/games/" .. game.PlaceId
             .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true")
@@ -1450,6 +1474,7 @@ local function serverHop()
 end
 
 local function rejoin()
+    pcall(flushSettings)
     pcall(function()
         if #Players:GetPlayers() <= 1 then
             TeleportService:Teleport(game.PlaceId, lp)
@@ -1927,6 +1952,11 @@ end))
 -- toggle : { "toggle", name, key, callback }
 -- drop   : { "drop",   name, key, options, callback }
 local MENU_WINDOW
+-- Slate window size for a Menu Size percentage: width, height, minimum width, minimum height
+local function menuMetrics(percent)
+    local scale = math.clamp((tonumber(percent) or 100) / 100, 0.5, 2)
+    return math.floor(540 * scale), math.floor(360 * scale), math.floor(480 * scale), math.floor(320 * scale)
+end
 
 -- slider : { "slider", name, key, min, max, step, callback }
 -- button : { "button", name, callback }
@@ -2078,27 +2108,29 @@ local UI = {
     { tab = "Farm", icon = "coins", sections = {
         { name = "Auto Farm", items = {
             { "toggle", "Auto Farm Coins", "coins", function(v)
-                if not v then
-                    if curTween then curTween:Cancel() end
-                    local _, hum, root = myParts()
-                    if hum and root then hum:MoveTo(root.Position) end   -- stop a Walk in progress
-                end
+                if not v and curTween then curTween:Cancel() end
             end },
-            { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween", "Walk" } },
+            { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween" } },
             { "toggle", "Noclip While Farming", "coinNoclip" },
         } },
         { name = "Tuning", items = {
+            { "slider", "Teleport Speed (coins/s)", "coinTpSpeed", 1, 20, 1 },
             { "slider", "Tween Speed (studs/s)", "coinSpeed", 20, 200, 10 },
-            { "slider", "Farm Delay (ms)", "coinDelay", 40, 500, 10 },
+            { "slider", "Tween Delay (ms)", "coinDelay", 40, 500, 10 },
         } },
     } },
     { tab = "Misc", icon = "wrench", sections = {
         { name = "Utilities", items = {
             { "slider", "Menu Size (%)", "menuScale", 50, 200, 5, function(v)
                 if not MENU_WINDOW or MENU_WINDOW.Destroyed then return end
-                local scale = math.clamp((tonumber(v) or 100) / 100, 0.5, 2)
+                local w, h, minW, minH = menuMetrics(v)
                 pcall(function()
-                    MENU_WINDOW.scale.Scale = scale
+                    MENU_WINDOW.MinSize = Vector2.new(minW, minH)
+                    MENU_WINDOW.root.Size = UDim2.fromOffset(w, h)
+                    MENU_WINDOW._railWidth = nil
+                    MENU_WINDOW._railFloorCache = nil
+                    MENU_WINDOW:_layoutRail(false)
+                    MENU_WINDOW:_clampToViewport()
                 end)
             end },
             { "toggle", "Anti-AFK", "antiafk" },
@@ -2196,6 +2228,7 @@ local function saveSettings()
     if ok then saved = snap end
 end
 
+flushSettings = saveSettings
 loadSettings()
 if S.autoShoot then installHooks() end   -- a saved Auto Shoot needs the hooks to record the gun's shot call
 if S.silent and not installHooks() then   -- the hooks are not installed by a saved toggle alone
@@ -2287,15 +2320,17 @@ local function buildSlate()
     pcall(function() Slate.Theme.Preset("Violet") end)
     pcall(function() Slate:SetFontFamily("JosefinSans") end)
 
+    local w, h, minW, minH = menuMetrics(S.menuScale)   -- the saved Menu Size
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
-            Size = UDim2.fromOffset(540, 360), MinSize = Vector2.new(480, 320),
+            Size = UDim2.fromOffset(w, h), MinSize = Vector2.new(minW, minH),
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
     if not okW or not win then return nil, "creating the window: " .. tostring(win) end
     MENU_WINDOW = win
+    pcall(function() win:_clampToViewport() end)   -- a larger saved size must still fit on screen
     pcall(function() win:SetBackdrop("aurora") end)
 
     local created = 0
@@ -2953,27 +2988,18 @@ loop(0.12, function()
 end)
 
 -- auto farm coins
--- Teleport: instant hop to each coin | Tween: smooth straight-line move at Tween Speed
--- Walk: the character walks to the coin with Humanoid:MoveTo at its normal WalkSpeed (no position writes)
+-- Teleport: instant hop to each coin; Teleport Speed is how many coins per second it visits
+-- Tween: smooth straight-line move at Tween Speed, with Tween Delay between coins
+-- Every coin is visited once (see nearestCoin).
 loop(0.2, function()
     if not S.coins then return end
     local _, hum, root = myParts()
     if not (root and hum and hum.Health > 0) then return 0.5 end
     local coin, dist = nearestCoin(root)
     if not (coin and coin.Parent) then return 0.3 end
-    coinTries[coin] = (coinTries[coin] or 0) + 1
-    if S.coinMode == "Walk" then
-        hum:MoveTo(coin.Position)
-        local t0 = os.clock()
-        local limit = dist / math.max(hum.WalkSpeed, 1) + 1.5
-        while alive and S.coins and coin.Parent and root.Parent and hum.Health > 0
-            and os.clock() - t0 < limit do
-            local dx, dz = coin.Position.X - root.Position.X, coin.Position.Z - root.Position.Z
-            if math.sqrt(dx * dx + dz * dz) < 3 then break end
-            task.wait(0.1)
-        end
-        return S.coinDelay / 1000
-    elseif S.coinMode == "Tween" then
+    coinTries[coin] = true
+    local pause
+    if S.coinMode == "Tween" then
         local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
         curTween = TweenService:Create(root,
             TweenInfo.new(math.max(dist / S.coinSpeed, 0.05), Enum.EasingStyle.Linear),
@@ -2981,15 +3007,17 @@ loop(0.2, function()
         curTween:Play()
         curTween.Completed:Wait()
         curTween = nil
+        pause = S.coinDelay / 1000
     else
         root.CFrame = CFrame.new(coin.Position) * root.CFrame.Rotation
         root.AssemblyLinearVelocity = Vector3.zero
+        pause = 1 / math.max(S.coinTpSpeed, 1)
     end
     if touch and coin.Parent then
         pcall(touch, root, coin, 0)
         pcall(touch, root, coin, 1)
     end
-    return S.coinDelay / 1000
+    return pause
 end)
 
 -- auto grab gun (the gun drops when the sheriff dies; checked every 0.1 s)
