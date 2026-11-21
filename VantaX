@@ -34,7 +34,7 @@ local S = {
     -- weapons
     autoShoot = false, aura = false, auraRange = 14,
     -- farm
-    coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60, coinNoclip = true,
+    coins = false, coinMode = "Teleport", coinRate = 8, coinSpeed = 60, coinNoclip = true,
     gun = false,
     -- movement
     speed = false, speedVal = 30, jump = false, jumpVal = 80,
@@ -43,7 +43,7 @@ local S = {
     -- fling
     loopMurd = false, loopSher = false, flingPick = "",
     -- misc
-    antiafk = true, quickButton = false, menuScale = 100,
+    antiafk = true, quickButton = false,
     -- animations
     runAnim = "Off",
 }
@@ -1047,13 +1047,27 @@ end))
 -- Action functions
 -- ------------------------------------------------------------
 local curTween
-local coinTries = setmetatable({}, { __mode = "k" })   -- coins we already visited (skipped after 3 tries, e.g. bag full)
+local coinVisited = setmetatable({}, { __mode = "k" })   -- coins already collected by this farm (never visited twice)
+local lastCoinContainer
 local function nearestCoin(root)
     local container = coinContainer()
     if not container then return nil, math.huge end
-    local best, bd = nil, math.huge
+    if container ~= lastCoinContainer then   -- a new container is a new round: forget the old visits
+        lastCoinContainer = container
+        table.clear(coinVisited)
+    end
+    local list, withTouch = {}, 0
     for _, c in ipairs(container:GetDescendants()) do
-        if c:IsA("BasePart") and c.Name == "Coin_Server" and (coinTries[c] or 0) < 3 then
+        if c:IsA("BasePart") and c.Name == "Coin_Server" and not coinVisited[c] then
+            list[#list + 1] = c
+            if c:FindFirstChildOfClass("TouchTransmitter") then withTouch = withTouch + 1 end
+        end
+    end
+    -- a collected coin that is still in the map usually loses its touch interest: when only some coins have one,
+    -- those are the ones still collectable (when none or all have it, this filter changes nothing)
+    local best, bd = nil, math.huge
+    for _, c in ipairs(list) do
+        if withTouch == 0 or c:FindFirstChildOfClass("TouchTransmitter") then
             local d = (c.Position - root.Position).Magnitude
             if d < bd then best, bd = c, d end
         end
@@ -1926,8 +1940,6 @@ end))
 -- label  : { "label", text }
 -- toggle : { "toggle", name, key, callback }
 -- drop   : { "drop",   name, key, options, callback }
-local MENU_WINDOW
-
 -- slider : { "slider", name, key, min, max, step, callback }
 -- button : { "button", name, callback }
 -- ------------------------------------------------------------
@@ -2078,29 +2090,22 @@ local UI = {
     { tab = "Farm", icon = "coins", sections = {
         { name = "Auto Farm", items = {
             { "toggle", "Auto Farm Coins", "coins", function(v)
-                if not v then
-                    if curTween then curTween:Cancel() end
-                    local _, hum, root = myParts()
-                    if hum and root then hum:MoveTo(root.Position) end   -- stop a Walk in progress
+                if v then
+                    table.clear(coinVisited)
+                elseif curTween then
+                    curTween:Cancel()
                 end
             end },
-            { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween", "Walk" } },
+            { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween" } },
             { "toggle", "Noclip While Farming", "coinNoclip" },
         } },
         { name = "Tuning", items = {
+            { "slider", "Teleport Speed (coins/s)", "coinRate", 1, 20, 1 },
             { "slider", "Tween Speed (studs/s)", "coinSpeed", 20, 200, 10 },
-            { "slider", "Farm Delay (ms)", "coinDelay", 40, 500, 10 },
         } },
     } },
     { tab = "Misc", icon = "wrench", sections = {
         { name = "Utilities", items = {
-            { "slider", "Menu Size (%)", "menuScale", 50, 200, 5, function(v)
-                if not MENU_WINDOW or MENU_WINDOW.Destroyed then return end
-                local scale = math.clamp((tonumber(v) or 100) / 100, 0.5, 2)
-                pcall(function()
-                    MENU_WINDOW.scale.Scale = scale
-                end)
-            end },
             { "toggle", "Anti-AFK", "antiafk" },
             { "button", "Rejoin", rejoin },
             { "button", "Server Hop", serverHop },
@@ -2295,7 +2300,6 @@ local function buildSlate()
         })
     end)
     if not okW or not win then return nil, "creating the window: " .. tostring(win) end
-    MENU_WINDOW = win
     pcall(function() win:SetBackdrop("aurora") end)
 
     local created = 0
@@ -2953,27 +2957,16 @@ loop(0.12, function()
 end)
 
 -- auto farm coins
--- Teleport: instant hop to each coin | Tween: smooth straight-line move at Tween Speed
--- Walk: the character walks to the coin with Humanoid:MoveTo at its normal WalkSpeed (no position writes)
+-- Teleport: hops to each coin, Teleport Speed = coins per second | Tween: smooth straight-line move at Tween Speed
+-- Every coin is visited once; the next target is always the nearest coin that was not visited yet.
 loop(0.2, function()
     if not S.coins then return end
     local _, hum, root = myParts()
     if not (root and hum and hum.Health > 0) then return 0.5 end
     local coin, dist = nearestCoin(root)
     if not (coin and coin.Parent) then return 0.3 end
-    coinTries[coin] = (coinTries[coin] or 0) + 1
-    if S.coinMode == "Walk" then
-        hum:MoveTo(coin.Position)
-        local t0 = os.clock()
-        local limit = dist / math.max(hum.WalkSpeed, 1) + 1.5
-        while alive and S.coins and coin.Parent and root.Parent and hum.Health > 0
-            and os.clock() - t0 < limit do
-            local dx, dz = coin.Position.X - root.Position.X, coin.Position.Z - root.Position.Z
-            if math.sqrt(dx * dx + dz * dz) < 3 then break end
-            task.wait(0.1)
-        end
-        return S.coinDelay / 1000
-    elseif S.coinMode == "Tween" then
+    coinVisited[coin] = true
+    if S.coinMode == "Tween" then
         local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
         curTween = TweenService:Create(root,
             TweenInfo.new(math.max(dist / S.coinSpeed, 0.05), Enum.EasingStyle.Linear),
@@ -2989,7 +2982,8 @@ loop(0.2, function()
         pcall(touch, root, coin, 0)
         pcall(touch, root, coin, 1)
     end
-    return S.coinDelay / 1000
+    if S.coinMode == "Tween" then return 0.05 end
+    return 1 / math.max(S.coinRate, 1)
 end)
 
 -- auto grab gun (the gun drops when the sheriff dies; checked every 0.1 s)
