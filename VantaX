@@ -2097,15 +2097,8 @@ local UI = {
             { "slider", "Menu Size (%)", "menuScale", 50, 200, 5, function(v)
                 if not MENU_WINDOW or MENU_WINDOW.Destroyed then return end
                 local scale = math.clamp((tonumber(v) or 100) / 100, 0.5, 2)
-                local w, h = math.floor(540 * scale), math.floor(360 * scale)
-                local minW, minH = math.floor(480 * scale), math.floor(320 * scale)
                 pcall(function()
-                    MENU_WINDOW.MinSize = Vector2.new(minW, minH)
-                    MENU_WINDOW.root.Size = UDim2.fromOffset(w, h)
-                    MENU_WINDOW._railWidth = nil
-                    MENU_WINDOW._railFloorCache = nil
-                    MENU_WINDOW:_layoutRail(false)
-                    MENU_WINDOW:_clampToViewport()
+                    MENU_WINDOW.scale.Scale = scale
                 end)
             end },
             { "toggle", "Anti-AFK", "antiafk" },
