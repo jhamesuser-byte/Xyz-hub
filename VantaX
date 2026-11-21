@@ -21,36 +21,43 @@ local function track(c)
 end
 
 -- ------------------------------------------------------------
--- Configuration (options without a menu entry are fixed defaults)
+-- Configuration
+-- S   : options that have a menu entry
+-- CFG : fixed defaults (no menu entry)
 -- ------------------------------------------------------------
 local S = {
-    -- visual
-    esp = true, labels = true, dist = true, coinEsp = false, gunEsp = true,
-    fullbright = false, nofog = false, fovOn = false, fov = 70, notify = true,
+    -- visuals
+    esp = true, labels = true, dist = true, notify = true,
+    coinEsp = false, gunEsp = true, fullbright = false,
     -- aimbot
-    aimbot = false, aimMode = "Legit", aimPart = "Head", aimFov = 150, aimSpeed = 20,
-    aimPredict = 0, aimWall = true, aimTool = true, aimShowFov = true,
+    aimbot = false, aimFov = 150, aimSpeed = 20, aimShowFov = true,
     -- silent aim
-    silent = false, silentMode = "All", silentPart = "Head", silentFov = 200, silentHit = 100,
-    silentPredict = 0, silentWall = true, silentNeedTool = true, silentShowFov = false,
-    -- targeting
-    target = "Auto", prio = "Center", maxDist = 600,
+    silent = false, silentFov = 200, silentHit = 100, silentShowFov = false,
     -- weapons
-    autoShoot = false, autoEquip = false, aura = false, auraRange = 14, auraTp = false,
-    -- movement
-    speed = false, speedVal = 30, jump = false, jumpVal = 80, infjump = false,
-    noclip = false, fly = false, flySpeed = 60,
+    autoShoot = false, aura = false, auraRange = 14,
     -- farm
-    coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60,
+    coins = false, coinMode = "Teleport", coinDelay = 120,
     gun = false, gunMode = "Touch",
+    -- movement
+    speed = false, speedVal = 30, jump = false, jumpVal = 80,
+    fly = false, flySpeed = 60, infjump = false, noclip = false,
     -- misc
     antiafk = true,
 }
 
+local CFG = {
+    target = "Auto",     -- Auto: murderer targets everyone, everyone else targets the murderer
+    prio = "Center",     -- Center = closest to the crosshair, Closest = closest in studs
+    maxDist = 600,
+    aimPart = "Head", silentPart = "Head",
+    wall = true,         -- only target visible players
+    coinSpeed = 60,      -- studs/s for the Tween farm mode
+}
+
 local COLORS = {
     Murderer = Color3.fromRGB(255, 60, 60),
-    Sheriff    = Color3.fromRGB(70, 140, 255),
-    Innocent  = Color3.fromRGB(80, 230, 120),
+    Sheriff  = Color3.fromRGB(70, 140, 255),
+    Innocent = Color3.fromRGB(80, 230, 120),
 }
 local touch = (typeof(firetouchinterest) == "function") and firetouchinterest or nil
 
@@ -148,7 +155,7 @@ local FORCE = { role = nil }
 
 local function wantRole(role, myRole)
     if FORCE.role then return role == FORCE.role end
-    local a = S.target
+    local a = CFG.target
     if a == "All" then return true end
     if a == "Murderer" then return role == "Murderer" end
     if a == "Sheriff" then return role == "Sheriff" end
@@ -168,7 +175,7 @@ local function visible(cam, part, char)
     return hit == nil
 end
 
-local function pickTarget(fov, maxDist, partKey, wall, predictMs)
+local function pickTarget(fov, maxDist, partKey, wall)
     local cam = workspace.CurrentCamera
     if not cam then return nil end
     local _, myHum = myParts()
@@ -191,7 +198,7 @@ local function pickTarget(fov, maxDist, partKey, wall, predictMs)
                         if on and sp.Z > 0 then
                             local dd = (Vector2.new(sp.X, sp.Y) - center).Magnitude
                             if dd <= fov then
-                                local key = (S.prio == "Closest") and dist or dd
+                                local key = (CFG.prio == "Closest") and dist or dd
                                 if key < bestKey and ((not wall) or visible(cam, part, char)) then
                                     bestKey, bestPart, bestPlr = key, part, plr
                                 end
@@ -203,16 +210,13 @@ local function pickTarget(fov, maxDist, partKey, wall, predictMs)
         end
     end
     if not bestPart then return nil end
-    local pos = bestPart.Position
-    if predictMs and predictMs > 0 then
-        pos = pos + bestPart.AssemblyLinearVelocity * (predictMs / 1000)
-    end
-    return bestPart, pos, bestPlr
+    return bestPart, bestPart.Position, bestPlr
 end
 
 -- ------------------------------------------------------------
 -- Silent Aim (hooks) - state shared with the hooks via env.__MM2_SIL
 -- ------------------------------------------------------------
+-- mode is fixed to "All" (Raycast + Remote + Mouse); kept only so hooks left over from an older run keep working
 local SIL = {
     lock = false, pos = Vector3.zero, part = nil, mode = "All", hit = 100,
     camPos = Vector3.zero, rootPos = Vector3.zero, mouse = nil,
@@ -267,7 +271,7 @@ local function ours()
     return typeof(checkcaller) == "function" and checkcaller()
 end
 
-local function installHooks(needIndex)
+local function installHooks()
     if typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then
         return false
     end
@@ -280,8 +284,7 @@ local function installHooks(needIndex)
             local m = getnamecallmethod()
             local st = env.__MM2_SIL
             if st and st.lock and not ours() then
-                local mode = st.mode
-                if (mode == "Raycast" or mode == "All") and self == workspace then
+                if self == workspace then
                     if m == "Raycast" then
                         local origin, direction, params = ...
                         if typeof(origin) == "Vector3" and typeof(direction) == "Vector3"
@@ -302,7 +305,7 @@ local function installHooks(needIndex)
                         end
                     end
                 end
-                if (mode == "Remote" or mode == "All") and m == "FireServer" then
+                if m == "FireServer" then
                     local packed = st.remote(self, ...)
                     if packed then
                         if typeof(setnamecallmethod) == "function" then setnamecallmethod(m) end
@@ -314,13 +317,13 @@ local function installHooks(needIndex)
         end))
     end
 
-    if needIndex and not env.__MM2_IX then
+    if not env.__MM2_IX then
         env.__MM2_IX = true
         local oldIndex
         oldIndex = hookmetamethod(game, "__index", wrap(function(self, key)
             local st = env.__MM2_SIL
-            if st and st.lock and (st.mode == "Mouse" or st.mode == "All") and st.mouse
-                and self == st.mouse and (key == "Hit" or key == "Target") and not ours() then
+            if st and st.lock and st.mouse and self == st.mouse
+                and (key == "Hit" or key == "Target") and not ours() then
                 if st.roll() then
                     if key == "Hit" then return CFrame.new(st.pos) end
                     return st.part
@@ -332,27 +335,21 @@ local function installHooks(needIndex)
     return true
 end
 
-local function ensureHooks()
-    local needIndex = (S.silentMode == "Mouse" or S.silentMode == "All")
-    return installHooks(needIndex)
-end
-
 local function computeSilent()
     SIL.lock = false
-    SIL.mode = FORCE.role and "All" or S.silentMode
     SIL.hit = FORCE.role and 100 or S.silentHit
     if not (S.silent or FORCE.role) then return end
     local cam = workspace.CurrentCamera
     local char, hum, root = myParts()
     if not cam or not char or not hum or hum.Health <= 0 then return end
-    if S.silentNeedTool and not FORCE.role and not char:FindFirstChildOfClass("Tool") then return end
+    if not FORCE.role and not char:FindFirstChildOfClass("Tool") then return end
     SIL.camPos = cam.CFrame.Position
     SIL.rootPos = root and root.Position or SIL.camPos
     local part, pos
     if FORCE.role then
-        part, pos = pickTarget(5000, 5000, "Torso", false, 0)
+        part, pos = pickTarget(5000, 5000, "Torso", false)
     else
-        part, pos = pickTarget(S.silentFov, S.maxDist, S.silentPart, S.silentWall, S.silentPredict)
+        part, pos = pickTarget(S.silentFov, CFG.maxDist, CFG.silentPart, CFG.wall)
     end
     if part then
         SIL.lock = true
@@ -476,7 +473,7 @@ end
 -- Lighting
 local fbOrig
 local function applyLighting()
-    if not (S.fullbright or S.nofog) then
+    if not S.fullbright then
         if fbOrig then
             for k, v in pairs(fbOrig) do
                 pcall(function() Lighting[k] = v end)
@@ -487,15 +484,12 @@ local function applyLighting()
     end
     fbOrig = fbOrig or {
         Brightness = Lighting.Brightness, ClockTime = Lighting.ClockTime,
-        GlobalShadows = Lighting.GlobalShadows, FogEnd = Lighting.FogEnd, Ambient = Lighting.Ambient,
+        GlobalShadows = Lighting.GlobalShadows, Ambient = Lighting.Ambient,
     }
-    if S.fullbright then
-        Lighting.Brightness = 2
-        Lighting.ClockTime = 14
-        Lighting.GlobalShadows = false
-        Lighting.Ambient = Color3.new(1, 1, 1)
-    end
-    if S.nofog then Lighting.FogEnd = 1e6 end
+    Lighting.Brightness = 2
+    Lighting.ClockTime = 14
+    Lighting.GlobalShadows = false
+    Lighting.Ambient = Color3.new(1, 1, 1)
 end
 
 local setInfo -- set by the simple menu (Slate shows roles through notifications)
@@ -644,7 +638,7 @@ local function shootMurderer()
     end
     local mhum = mchar and mchar:FindFirstChildOfClass("Humanoid")
     if not mchar or not mhum or mhum.Health <= 0 then notify("Murderer not found"); return end
-    if not installHooks(true) then notify("Shoot Murderer needs hookmetamethod (not available)"); return end
+    if not installHooks() then notify("Shoot Murderer needs hookmetamethod (not available)"); return end
     local gun = equip("Gun")
     if not gun then notify("Gun not found"); return end
     shooting = true
@@ -729,14 +723,13 @@ local UI = {
     { tab = "Combat", icon = "crosshair", sections = {
         { name = "Aimbot", items = {
             { "toggle", "Aimbot", "aimbot" },
-            { "drop", "Aim Part", "aimPart", { "Head", "Torso" } },
+            { "slider", "Aim Speed", "aimSpeed", 1, 100, 5 },
             { "slider", "Aimbot FOV", "aimFov", 20, 600, 10 },
-            { "slider", "Aimbot Speed", "aimSpeed", 1, 100, 5 },
             { "toggle", "Show FOV Circle", "aimShowFov" },
         } },
         { name = "Silent Aim", items = {
             { "toggle", "Silent Aim", "silent", function(v)
-                if v and not ensureHooks() then
+                if v and not installHooks() then
                     S.silent = false
                     notify("Silent Aim unavailable: your executor has no hookmetamethod")
                 end
@@ -751,7 +744,7 @@ local UI = {
             { "slider", "Kill Aura Range", "auraRange", 5, 80, 3 },
         } },
     } },
-    { tab = "ESP", icon = "eye", sections = {
+    { tab = "Visuals", icon = "eye", sections = {
         { name = "Players", items = {
             { "toggle", "Player ESP", "esp", function(v)
                 if not v then clearAll() end
@@ -760,7 +753,7 @@ local UI = {
             { "toggle", "Show Distance", "dist" },
             { "toggle", "Role Notifier", "notify" },
         } },
-        { name = "Items", items = {
+        { name = "World", items = {
             { "toggle", "Coin ESP", "coinEsp" },
             { "toggle", "Gun ESP", "gunEsp" },
             { "toggle", "Fullbright", "fullbright", function() applyLighting() end },
@@ -779,8 +772,8 @@ local UI = {
             { "drop", "Grab Mode", "gunMode", { "Touch", "Teleport" } },
         } },
     } },
-    { tab = "Player", icon = "user", sections = {
-        { name = "Movement", items = {
+    { tab = "Movement", icon = "user", sections = {
+        { name = "Speed & Jump", items = {
             { "toggle", "WalkSpeed", "speed", function(v)
                 if not v then
                     local _, hum = myParts()
@@ -796,11 +789,13 @@ local UI = {
             end },
             { "slider", "JumpPower Value", "jumpVal", 50, 200, 10 },
         } },
-        { name = "Abilities", items = {
-            { "toggle", "Infinite Jump", "infjump" },
-            { "toggle", "Noclip", "noclip" },
+        { name = "Flight", items = {
             { "toggle", "Fly", "fly" },
             { "slider", "Fly Speed", "flySpeed", 20, 150, 10 },
+        } },
+        { name = "Other", items = {
+            { "toggle", "Infinite Jump", "infjump" },
+            { "toggle", "Noclip", "noclip" },
         } },
     } },
     { tab = "Misc", icon = "wrench", sections = {
@@ -1248,7 +1243,7 @@ task.spawn(function()
     end
 end)
 
--- camera: silent aim (target calculation), FOV circles, camera FOV, aimbot
+-- camera: silent aim (target calculation), FOV circles, aimbot
 track(RunService.RenderStepped:Connect(function()
     local cam = workspace.CurrentCamera
     if not cam then return end
@@ -1260,28 +1255,21 @@ track(RunService.RenderStepped:Connect(function()
     circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2)
     circSil.Visible = S.silent and S.silentShowFov
 
-    if S.fovOn then cam.FieldOfView = S.fov end
-
     if S.aimbot then
         local char, hum = myParts()
-        if char and hum and hum.Health > 0 and ((not S.aimTool) or char:FindFirstChildOfClass("Tool")) then
-            local ok, part, pos = pcall(pickTarget, S.aimFov, S.maxDist, S.aimPart, S.aimWall, S.aimPredict)
+        if char and hum and hum.Health > 0 and char:FindFirstChildOfClass("Tool") then
+            local ok, part, pos = pcall(pickTarget, S.aimFov, CFG.maxDist, CFG.aimPart, CFG.wall)
             if ok and part then
                 local cp = cam.CFrame.Position
-                if S.aimMode == "Rage" then
-                    cam.CFrame = CFrame.new(cp, pos)
-                else
-                    local look = cam.CFrame.LookVector
-                    local want = (pos - cp).Unit
-                    local a = math.clamp(S.aimSpeed / 100, 0.02, 1)
-                    cam.CFrame = CFrame.new(cp, cp + look:Lerp(want, a))
-                end
+                local want = (pos - cp).Unit
+                local a = math.clamp(S.aimSpeed / 100, 0.02, 1)
+                cam.CFrame = CFrame.new(cp, cp + cam.CFrame.LookVector:Lerp(want, a))
             end
         end
     end
 end))
 
--- combat: auto equip, auto shoot, kill aura
+-- combat: auto shoot, kill aura
 task.spawn(function()
     local lastShot = 0
     while alive do
@@ -1289,13 +1277,8 @@ task.spawn(function()
         if char and hum and hum.Health > 0 and root then
             local myRole = roleOf(lp)
 
-            if S.autoEquip and not char:FindFirstChildOfClass("Tool") then
-                if myRole == "Sheriff" then equip("Gun")
-                elseif myRole == "Murderer" then equip("Knife") end
-            end
-
             if S.autoShoot and myRole == "Sheriff" and os.clock() - lastShot > 0.6 then
-                local ok, part = pcall(pickTarget, S.silentFov, S.maxDist, S.silentPart, true, 0)
+                local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, CFG.silentPart, true)
                 if ok and part then
                     local gun = equip("Gun")
                     if gun then
@@ -1323,13 +1306,8 @@ task.spawn(function()
                 if best then
                     local knife = equip("Knife")
                     if knife then
-                        if S.auraTp and bd > 4 then
-                            local behind = (best.CFrame * CFrame.new(0, 0, 3)).Position
-                            root.CFrame = CFrame.lookAt(behind, best.Position)
-                        else
-                            root.CFrame = CFrame.lookAt(root.Position,
-                                Vector3.new(best.Position.X, root.Position.Y, best.Position.Z))
-                        end
+                        root.CFrame = CFrame.lookAt(root.Position,
+                            Vector3.new(best.Position.X, root.Position.Y, best.Position.Z))
                         pcall(function() knife:Activate() end)
                     end
                 end
@@ -1351,7 +1329,7 @@ task.spawn(function()
                     if S.coinMode == "Tween" then
                         local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
                         curTween = TweenService:Create(root,
-                            TweenInfo.new(math.max(dist / S.coinSpeed, 0.05), Enum.EasingStyle.Linear),
+                            TweenInfo.new(math.max(dist / CFG.coinSpeed, 0.05), Enum.EasingStyle.Linear),
                             { CFrame = goal })
                         curTween:Play()
                         curTween.Completed:Wait()
@@ -1480,7 +1458,7 @@ env.__MM2_CLEANUP = function()
     SIL.lock = false
     S.speed, S.jump, S.fly, S.noclip, S.coins, S.gun = false, false, false, false, false, false
     FORCE.role = nil
-    S.fullbright, S.nofog = false, false
+    S.fullbright = false
     if curTween then pcall(function() curTween:Cancel() end) end
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     pcall(flyOff)
