@@ -38,7 +38,7 @@ local S = {
     -- weapons
     autoShoot = false, aura = false, auraRange = 14,
     -- farm
-    coins = false, coinMode = "Teleport", coinDelay = 120,
+    coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60,
     gun = false, gunMode = "Touch",
     -- movement
     speed = false, speedVal = 30, jump = false, jumpVal = 80,
@@ -53,7 +53,6 @@ local CFG = {
     maxDist = 600,
     aimPart = "Head", silentPart = "Head",
     wall = true,         -- only target visible players
-    coinSpeed = 60,      -- studs/s for the Tween farm mode
     shotCooldown = 0.6,  -- seconds between Auto Shoot attempts (uncalibrated: not measured against the real gun reload)
 }
 
@@ -788,6 +787,7 @@ local UI = {
                 if not v and curTween then curTween:Cancel() end
             end },
             { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween" } },
+            { "slider", "Tween Speed (studs/s)", "coinSpeed", 20, 200, 10 },
             { "slider", "Farm Delay (ms)", "coinDelay", 40, 500, 10 },
         } },
     } },
@@ -1424,7 +1424,7 @@ loop(0.2, function()
     if S.coinMode == "Tween" then
         local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
         curTween = TweenService:Create(root,
-            TweenInfo.new(math.max(dist / CFG.coinSpeed, 0.05), Enum.EasingStyle.Linear),
+            TweenInfo.new(math.max(dist / S.coinSpeed, 0.05), Enum.EasingStyle.Linear),
             { CFrame = goal })
         curTween:Play()
         curTween.Completed:Wait()
