@@ -70,10 +70,220 @@ local EXEC = "Hooks: " .. yn(typeof(hookmetamethod) == "function" and typeof(get
     .. " | Touch: " .. yn(touch ~= nil)
     .. " | Files: " .. yn(typeof(readfile) == "function" and typeof(writefile) == "function")
 
-local function notify(msg)
-    pcall(function()
-        StarterGui:SetCore("SendNotification", { Title = "MM2 Hub", Text = tostring(msg), Duration = 4 })
-    end)
+-- ------------------------------------------------------------
+-- Notifications: toasts stacked in the top-right corner (slide in, timer bar, click to dismiss)
+-- notify(msg, kind, title): kind = "info" | "success" | "warn" | "error" | "murderer" | "sheriff";
+-- without a kind it is guessed from the text.
+-- ------------------------------------------------------------
+local NOTIFY = { gui = nil, list = nil, order = 0, last = {} }
+local notify
+do
+    local WIDTH, MAX = 300, 5
+    local KINDS = {
+        info     = { color = Color3.fromRGB(160, 120, 255), title = "MM2 Hub" },
+        success  = { color = Color3.fromRGB(80, 230, 120),  title = "Done" },
+        warn     = { color = Color3.fromRGB(255, 190, 70),  title = "Warning" },
+        error    = { color = Color3.fromRGB(255, 85, 85),   title = "Error" },
+        murderer = { color = COLORS.Murderer,               title = "Murderer" },
+        sheriff  = { color = COLORS.Sheriff,                title = "Sheriff" },
+    }
+
+    local function guessKind(msg)
+        local m = msg:lower()
+        if m:find("error", 1, true) then return "error" end
+        for _, w in ipairs({ "not found", "no ", "failed", "could not", "unavailable", "invalid", "not ready",
+            "not available", "cannot", "already", "turn ", "you are", "pick a", "sitting" }) do
+            if m:find(w, 1, true) then return "warn" end
+        end
+        for _, w in ipairs({ "flung", "grabbed", " done" }) do
+            if m:find(w, 1, true) then return "success" end
+        end
+        return "info"
+    end
+
+    local function ensureGui()
+        if NOTIFY.gui and NOTIFY.gui.Parent then return true end
+        local gui = Instance.new("ScreenGui")
+        gui.Name = "MM2_Notify"
+        gui.ResetOnSpawn = false
+        gui.IgnoreGuiInset = true
+        gui.DisplayOrder = 2147483000
+        gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+        local parents = {
+            function() return (typeof(gethui) == "function") and gethui() or nil end,
+            function() return lp:FindFirstChildOfClass("PlayerGui") end,
+            function() return game:GetService("CoreGui") end,
+        }
+        local mounted = false
+        for _, getParent in ipairs(parents) do
+            local ok = pcall(function() gui.Parent = getParent() end)
+            if ok and gui.Parent then mounted = true break end
+        end
+        if not mounted then
+            pcall(function() gui:Destroy() end)
+            return false
+        end
+        local list = Instance.new("Frame")
+        list.Name = "List"
+        list.BackgroundTransparency = 1
+        list.AnchorPoint = Vector2.new(1, 0)
+        list.Position = UDim2.new(1, -16, 0, 64)
+        list.Size = UDim2.fromOffset(WIDTH, 0)
+        list.AutomaticSize = Enum.AutomaticSize.Y
+        list.Parent = gui
+        local layout = Instance.new("UIListLayout")
+        layout.Padding = UDim.new(0, 8)
+        layout.SortOrder = Enum.SortOrder.LayoutOrder
+        layout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+        layout.Parent = list
+        NOTIFY.gui, NOTIFY.list = gui, list
+        return true
+    end
+
+    local function dismiss(holder)
+        if not (holder and holder.Parent) or holder:GetAttribute("Closing") then return end
+        holder:SetAttribute("Closing", true)
+        pcall(function()
+            local toast = holder:FindFirstChild("Toast")
+            if toast then
+                TweenService:Create(toast, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+                    { Position = UDim2.new(1, 40, 0, 0) }):Play()
+            end
+        end)
+        task.delay(0.26, function()
+            pcall(function()
+                if not holder.Parent then return end
+                holder.AutomaticSize = Enum.AutomaticSize.None
+                holder.Size = UDim2.fromOffset(WIDTH, holder.AbsoluteSize.Y)
+                local t = TweenService:Create(holder, TweenInfo.new(0.18, Enum.EasingStyle.Quad),
+                    { Size = UDim2.fromOffset(WIDTH, 0) })
+                t.Completed:Connect(function() pcall(function() holder:Destroy() end) end)
+                t:Play()
+            end)
+        end)
+    end
+
+    local function label(parent, text, font, size, color, order)
+        local l = Instance.new("TextLabel")
+        l.BackgroundTransparency = 1
+        l.Size = UDim2.new(1, 0, 0, 0)
+        l.AutomaticSize = Enum.AutomaticSize.Y
+        l.Font = font
+        l.TextSize = size
+        l.TextColor3 = color
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.TextYAlignment = Enum.TextYAlignment.Top
+        l.TextWrapped = true
+        l.Text = text
+        l.LayoutOrder = order
+        l.Parent = parent
+        return l
+    end
+
+    notify = function(msg, kind, title)
+        msg = tostring(msg)
+        local now = os.clock()
+        if NOTIFY.last[msg] and now - NOTIFY.last[msg] < 1.5 then return end   -- same text again: ignore
+        NOTIFY.last[msg] = now
+        pcall(function()
+            if not alive or not ensureGui() then return end
+            local k = KINDS[kind or guessKind(msg)] or KINDS.info
+            local duration = math.clamp(2.5 + #msg * 0.03, 3, 8)
+
+            -- keep at most MAX toasts on screen: the oldest one leaves
+            local shown = {}
+            for _, h in ipairs(NOTIFY.list:GetChildren()) do
+                if h:IsA("Frame") and not h:GetAttribute("Closing") then shown[#shown + 1] = h end
+            end
+            table.sort(shown, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+            for i = 1, #shown - MAX + 1 do dismiss(shown[i]) end
+
+            NOTIFY.order = NOTIFY.order + 1
+            local holder = Instance.new("Frame")
+            holder.Name = "Holder"
+            holder.BackgroundTransparency = 1
+            holder.Size = UDim2.fromOffset(WIDTH, 0)
+            holder.AutomaticSize = Enum.AutomaticSize.Y
+            holder.LayoutOrder = NOTIFY.order
+            holder.Parent = NOTIFY.list
+
+            local toast = Instance.new("Frame")
+            toast.Name = "Toast"
+            toast.Size = UDim2.new(1, 0, 0, 0)
+            toast.AutomaticSize = Enum.AutomaticSize.Y
+            toast.Position = UDim2.new(1, 40, 0, 0)   -- starts off to the right and slides in
+            toast.BackgroundColor3 = Color3.fromRGB(18, 16, 27)
+            toast.BackgroundTransparency = 0.05
+            toast.BorderSizePixel = 0
+            toast.Parent = holder
+            local corner = Instance.new("UICorner")
+            corner.CornerRadius = UDim.new(0, 10)
+            corner.Parent = toast
+            local stroke = Instance.new("UIStroke")
+            stroke.Color = k.color
+            stroke.Transparency = 0.6
+            stroke.Thickness = 1
+            stroke.Parent = toast
+
+            local accent = Instance.new("Frame")   -- colored strip on the left
+            accent.Position = UDim2.new(0, 8, 0, 10)
+            accent.Size = UDim2.new(0, 3, 1, -20)
+            accent.BackgroundColor3 = k.color
+            accent.BorderSizePixel = 0
+            accent.Parent = toast
+            local ac = Instance.new("UICorner")
+            ac.CornerRadius = UDim.new(1, 0)
+            ac.Parent = accent
+
+            local content = Instance.new("Frame")
+            content.BackgroundTransparency = 1
+            content.Position = UDim2.new(0, 20, 0, 0)
+            content.Size = UDim2.new(1, -32, 0, 0)
+            content.AutomaticSize = Enum.AutomaticSize.Y
+            content.Parent = toast
+            local pad = Instance.new("UIPadding")
+            pad.PaddingTop = UDim.new(0, 10)
+            pad.PaddingBottom = UDim.new(0, 16)
+            pad.Parent = content
+            local lay = Instance.new("UIListLayout")
+            lay.Padding = UDim.new(0, 2)
+            lay.SortOrder = Enum.SortOrder.LayoutOrder
+            lay.Parent = content
+            label(content, string.upper(title or k.title), Enum.Font.GothamBold, 11, k.color, 1)
+            label(content, msg, Enum.Font.GothamMedium, 13, Color3.fromRGB(236, 234, 245), 2)
+
+            local track = Instance.new("Frame")   -- timer bar
+            track.Position = UDim2.new(0, 20, 1, -7)
+            track.Size = UDim2.new(1, -32, 0, 2)
+            track.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            track.BackgroundTransparency = 0.9
+            track.BorderSizePixel = 0
+            track.Parent = toast
+            local fill = Instance.new("Frame")
+            fill.Size = UDim2.new(1, 0, 1, 0)
+            fill.BackgroundColor3 = k.color
+            fill.BorderSizePixel = 0
+            fill.Parent = track
+            for _, f in ipairs({ track, fill }) do
+                local c = Instance.new("UICorner")
+                c.CornerRadius = UDim.new(1, 0)
+                c.Parent = f
+            end
+
+            toast.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.MouseButton1
+                    or input.UserInputType == Enum.UserInputType.Touch then
+                    dismiss(holder)
+                end
+            end)
+
+            TweenService:Create(toast, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+                { Position = UDim2.new(0, 0, 0, 0) }):Play()
+            TweenService:Create(fill, TweenInfo.new(duration, Enum.EasingStyle.Linear),
+                { Size = UDim2.new(0, 0, 1, 0) }):Play()
+            task.delay(duration, function() dismiss(holder) end)
+        end)
+    end
 end
 
 -- HTTP with fallback (some executors do not have game:HttpGet)
@@ -788,8 +998,8 @@ local function refresh()
     end
 
     if S.notify then
-        if murd and murd ~= lastMurd then notify("Murderer: " .. murd.DisplayName) end
-        if sher and sher ~= lastSher then notify("Sheriff: " .. sher.DisplayName) end
+        if murd and murd ~= lastMurd then notify(murd.DisplayName, "murderer", "Murderer") end
+        if sher and sher ~= lastSher then notify(sher.DisplayName, "sheriff", "Sheriff") end
     end
     lastMurd, lastSher = murd, sher
 
@@ -1117,7 +1327,6 @@ local function throwKnife()
             else
                 remote:FireServer(table.unpack(args, 1, args.n))
             end
-            notify(string.format("Knife thrown at %s (%s call: %s)", plr and plr.DisplayName or "?", how, remote.Name))
         end)
         if not ok3 then notify("Throw Knife error: " .. tostring(err)) end
         throwing = false
@@ -1179,12 +1388,6 @@ local function setFlingMode(on)
     FLING.active = on
 end
 
-local FLING_OFFSETS = {
-    CFrame.new(0, 1.5, 0), CFrame.new(0, -1.5, 0),
-    CFrame.new(2, 0, 0),   CFrame.new(-2, 0, 0),
-    CFrame.new(0, 0, 2),   CFrame.new(0, 0, -2),
-}
-
 local function liveParts(plr)
     local c = plr and plr.Character
     local h = c and c:FindFirstChildOfClass("Humanoid")
@@ -1203,9 +1406,11 @@ local function flingBlocked()
     return nil
 end
 
--- Flings one player; returns true when he was thrown away. quiet = no notifications,
--- inBatch = the caller (Fling All) already owns FLING.busy.
-local function flingPlayer(plr, quiet, inBatch)
+-- Flings one player; returns true when he was thrown away (and, when it gave up, the reason).
+-- quiet = no notifications, inBatch = the caller (Fling All) already owns FLING.busy.
+-- Method: stand inside the target's body (above, below and beside it, spinning) with absurd velocities,
+-- a body thrust and a heavy body, so the physics contact throws him; repeats until he leaves the map.
+local function flingPlayer(plr, quiet, inBatch, homeCF)
     if not inBatch then
         local why = flingBlocked()
         if why then
@@ -1213,66 +1418,117 @@ local function flingPlayer(plr, quiet, inBatch)
             return false
         end
     end
-    local _, hum, root = myParts()
+    local char, hum, root = myParts()
     local thum, troot = liveParts(plr)
-    if not (hum and root and thum and troot) then
+    if not (char and hum and root and thum and troot) then
         if not quiet then notify("That player is not available") end
         return false
     end
+    local thead = plr.Character and plr.Character:FindFirstChild("Head")
 
     FLING.busy = true
     setFlingMode(true)
     if not inBatch then FLING.stop = false end
-    local home = root.CFrame
+    local home = homeCF or root.CFrame   -- where you were when you started: you come back here when it ends
     local oldFall = workspace.FallenPartsDestroyHeight
-    local oldProps, oldStand = root.CustomPhysicalProperties, hum.PlatformStand
-    pcall(function() workspace.FallenPartsDestroyHeight = -1e9 end)   -- do not get deleted when thrown down
-    -- heavy, frictionless body: the hit transfers much more momentum; no humanoid fighting the spin
+    local cam = workspace.CurrentCamera
+    local oldSubject = cam and cam.CameraSubject
+    local oldProps = root.CustomPhysicalProperties
+    pcall(function() workspace.FallenPartsDestroyHeight = 0 / 0 end)   -- do not get deleted when thrown down
     pcall(function()
-        root.CustomPhysicalProperties = PhysicalProperties.new(100, 0, 0, 0, 0)
-        hum.PlatformStand = true
+        root.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+        if cam then cam.CameraSubject = thum end   -- the camera follows him instead of spinning with you
     end)
+    local thrust = Instance.new("BodyThrust")
+    thrust.Name = "MM2_Thrust"
+    thrust.Force = Vector3.new(9999, 9999, 9999)
+    thrust.Location = root.Position
+    pcall(function() thrust.Parent = root end)
 
-    local flung = false
+    local flung, reason = false, nil
     pcall(function()
-        local t0, n = os.clock(), 0
+        local t0 = os.clock()
         local limit = inBatch and FLING_BATCH_MAX or math.huge
-        local last = troot.Position
-        while alive and not FLING.stop and os.clock() - t0 < limit do
-            if not (root.Parent and troot.Parent and hum.Health > 0 and thum.Health > 0) then break end
-            -- thrown away: absurd speed, a jump of many studs in one frame, or fell out of the map
-            if troot.AssemblyLinearVelocity.Magnitude > 300 or (troot.Position - last).Magnitude > 25
-                or troot.Position.Y < oldFall + 10 then
-                flung = true
-                break
-            end
-            last = troot.Position
-            n = n + 1
-            -- sit on him (a little ahead of where he is going) and spin
-            root.CFrame = troot.CFrame * FLING_OFFSETS[n % #FLING_OFFSETS + 1] + troot.AssemblyLinearVelocity * 0.1
-            root.AssemblyLinearVelocity = Vector3.new(5e7, 5e7, 5e7)
-            root.AssemblyAngularVelocity = Vector3.new(5e7, 5e7, 5e7)
+        local angle = 0
+
+        local function thrown()
+            return troot.AssemblyLinearVelocity.Magnitude > 400 or troot.Position.Y < oldFall + 10
+        end
+        local function running()
+            if not (alive and not FLING.stop and root.Parent and troot.Parent) then return false end
+            if hum.Health <= 0 or thum.Health <= 0 then return false end
+            if thum.Sit then reason = plr.DisplayName .. " is sitting and cannot be flung" return false end
+            return os.clock() - t0 < limit
+        end
+        -- one frame: put the body at an offset of the target part, spinning, then check the result
+        local function hit(base, offset, rot)
+            root.CFrame = CFrame.new(base.Position) * offset * rot
+            root.AssemblyLinearVelocity = Vector3.new(9e7, 9e8, 9e7)
+            root.AssemblyAngularVelocity = Vector3.new(9e8, 9e8, 9e8)
             RunService.Heartbeat:Wait()
+            if thrown() then flung = true end
+            return flung or not running()
+        end
+
+        while running() and not flung do
+            -- every 2 s change the body part he is hit on (root <-> head)
+            local base = (thead and thead.Parent and math.floor((os.clock() - t0) / 2) % 2 == 1) and thead or troot
+            local speed = base.AssemblyLinearVelocity.Magnitude
+            local ahead = thum.MoveDirection * speed / 1.25
+            if speed < 50 then   -- standing or slow: spin through him from every side
+                angle = angle + 100
+                local rot = CFrame.Angles(math.rad(angle), 0, 0)
+                for _, off in ipairs({
+                    CFrame.new(0, 1.5, 0) + ahead,
+                    CFrame.new(0, -1.5, 0) + ahead,
+                    CFrame.new(2.25, 1.5, -2.25) + ahead,
+                    CFrame.new(-2.25, -1.5, 2.25) + ahead,
+                    CFrame.new(0, 1.5, 0) + thum.MoveDirection,
+                    CFrame.new(0, -1.5, 0) + thum.MoveDirection,
+                }) do
+                    if hit(base, off, rot) then break end
+                end
+            else                 -- moving fast: cut across his path
+                local walk, v = thum.WalkSpeed, speed / 1.25
+                local flat, up = CFrame.Angles(0, 0, 0), CFrame.Angles(math.rad(90), 0, 0)
+                for _, s in ipairs({
+                    { CFrame.new(0, 1.5, walk), up }, { CFrame.new(0, -1.5, -walk), flat },
+                    { CFrame.new(0, 1.5, walk), up }, { CFrame.new(0, 1.5, v), up },
+                    { CFrame.new(0, -1.5, -v), flat }, { CFrame.new(0, 1.5, v), up },
+                    { CFrame.new(0, -1.5, 0), flat },
+                }) do
+                    if hit(base, s[1], s[2]) then break end
+                end
+            end
         end
     end)
 
-    -- go back and stop all the spinning
+    -- take the thrust off, stop all the spinning and go back to where the fling was started
+    pcall(function() thrust:Destroy() end)
     pcall(function()
-        for _ = 1, 12 do
+        local goal = home * CFrame.new(0, 0.5, 0)
+        for i = 1, 90 do
             if not root.Parent then break end
-            root.AssemblyLinearVelocity = Vector3.zero
-            root.AssemblyAngularVelocity = Vector3.zero
-            root.CFrame = home
+            for _, d in ipairs(char:GetDescendants()) do
+                if d:IsA("BasePart") then
+                    d.AssemblyLinearVelocity = Vector3.zero
+                    d.AssemblyAngularVelocity = Vector3.zero
+                end
+            end
+            char:PivotTo(goal)
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
             RunService.Heartbeat:Wait()
+            if i >= 10 and (root.Position - goal.Position).Magnitude < 3 then break end
         end
     end)
     pcall(function()
         workspace.FallenPartsDestroyHeight = oldFall
         root.CustomPhysicalProperties = oldProps
-        hum.PlatformStand = oldStand
+        if cam then cam.CameraSubject = oldSubject or hum end
     end)
     if not inBatch then FLING.busy = false end
-    return flung
+    if reason and not quiet then notify(reason) end
+    return flung, reason
 end
 
 local function findRolePlayer(roleName)
@@ -1318,13 +1574,15 @@ local function flingAll()
     if why then notify(why); return end
     FLING.busy, FLING.stop = true, false
     setFlingMode(true)
+    local _, _, myRoot = myParts()
+    local startCF = myRoot and myRoot.CFrame   -- Fling All brings you back here after each player
     task.spawn(function()
         local count = 0
         pcall(function()
             for _, plr in ipairs(Players:GetPlayers()) do
                 if FLING.stop or not alive then break end
                 if plr ~= lp and liveParts(plr) then
-                    if flingPlayer(plr, true, true) then count = count + 1 end
+                    if flingPlayer(plr, true, true, startCF) then count = count + 1 end
                 end
             end
         end)
@@ -2635,6 +2893,7 @@ env.__MM2_CLEANUP = function()
     end
     pcall(ui.destroy)
     pcall(function() fovGui:Destroy() end)
+    pcall(function() if NOTIFY.gui then NOTIFY.gui:Destroy() end end)
     pcall(function() quickGui:Destroy() end)
     env.__MM2_CLEANUP = nil
 end
