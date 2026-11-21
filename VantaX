@@ -35,7 +35,7 @@ local S = {
     autoShoot = false, aura = false, auraRange = 14,
     -- farm
     coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60, coinNoclip = true,
-    gun = false, gunMode = "Touch",
+    gun = false,
     -- movement
     speed = false, speedVal = 30, jump = false, jumpVal = 80,
     fly = false, flySpeed = 60, infjump = false, noclip = false,
@@ -741,8 +741,13 @@ end
 -- Grab the dropped gun. "Touch" = fires the touch from where you stand (no teleport).
 -- "Teleport" = quick hop to the gun and straight back.
 local grabbing = false
+-- Grab Gun, instant: 1) fire a touch on the drop from where you stand (no movement); 2) if the gun is still
+-- not yours after a moment, hop onto it, wait for the pickup and go straight back to where you were.
+local lastGrabFail = 0
+
 local function grabGun(manual)
     if grabbing then return false end
+    if not manual and os.clock() - lastGrabFail < 1.5 then return false end
     local _, hum, root = myParts()
     if not root or not hum or hum.Health <= 0 then return false end
     if hasTool(lp, "Gun") or hasTool(lp, "Knife") then
@@ -756,30 +761,40 @@ local function grabGun(manual)
         return false
     end
     grabbing = true
-    if touch then
-        pcall(touch, root, part, 0)
-        pcall(touch, root, part, 1)
-        task.wait(0.12)
-    elseif S.gunMode == "Touch" and manual then
-        notify("Your executor has no firetouchinterest: set Grab Mode to Teleport")
-    end
-    if S.gunMode == "Teleport" and not hasTool(lp, "Gun") and root.Parent and part.Parent then
-        local back = root.CFrame
-        root.CFrame = part.CFrame
-        task.wait(0.1)
+    local function got() return hasTool(lp, "Gun") end
+    local back
+    pcall(function()
         if touch then
             pcall(touch, root, part, 0)
             pcall(touch, root, part, 1)
+            local t0 = os.clock()
+            while alive and not got() and part.Parent and os.clock() - t0 < 0.25 do task.wait(0.03) end
         end
-        task.wait(0.1)
-        if root.Parent then
-            root.CFrame = back
-            root.AssemblyLinearVelocity = Vector3.zero
+        if alive and not got() and part.Parent and root.Parent and hum.Health > 0 then
+            back = root.CFrame
+            root.CFrame = part.CFrame
+            local t0 = os.clock()
+            while alive and not got() and part.Parent and os.clock() - t0 < 1 do
+                if touch then
+                    pcall(touch, root, part, 0)
+                    pcall(touch, root, part, 1)
+                end
+                task.wait(0.05)
+            end
         end
+    end)
+    if back and root.Parent then   -- always return, even if something above failed
+        root.CFrame = back
+        root.AssemblyLinearVelocity = Vector3.zero
     end
     grabbing = false
-    local ok = hasTool(lp, "Gun")
-    if ok then notify("Gun grabbed") end
+    local ok = got()
+    if ok then
+        notify("Gun grabbed")
+    else
+        lastGrabFail = os.clock()
+        if manual then notify("Could not grab the gun") end
+    end
     return ok
 end
 
@@ -983,7 +998,6 @@ local UI = {
         { name = "Sheriff", items = {
             { "toggle", "Auto Shoot Murderer", "autoShoot" },
             { "toggle", "Auto Grab Gun", "gun" },
-            { "drop", "Grab Mode", "gunMode", { "Touch", "Teleport" } },
         } },
         { name = "Murderer", items = {
             { "toggle", "Kill Aura", "aura" },
@@ -1865,8 +1879,8 @@ loop(0.2, function()
     return S.coinDelay / 1000
 end)
 
--- auto grab gun (the gun drops when the sheriff dies)
-loop(0.25, function()
+-- auto grab gun (the gun drops when the sheriff dies; checked every 0.1 s)
+loop(0.1, function()
     if S.gun then grabGun(false) end
 end)
 
