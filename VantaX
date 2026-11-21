@@ -21,7 +21,7 @@ local function track(c)
 end
 
 -- ------------------------------------------------------------
--- Configuration
+-- Configuration (options without a menu entry are fixed defaults)
 -- ------------------------------------------------------------
 local S = {
     -- visual
@@ -729,12 +729,9 @@ local UI = {
     { tab = "Combat", icon = "crosshair", sections = {
         { name = "Aimbot", items = {
             { "toggle", "Aimbot", "aimbot" },
-            { "drop", "Aimbot Mode", "aimMode", { "Legit", "Rage" } },
             { "drop", "Aim Part", "aimPart", { "Head", "Torso" } },
             { "slider", "Aimbot FOV", "aimFov", 20, 600, 10 },
             { "slider", "Aimbot Speed", "aimSpeed", 1, 100, 5 },
-            { "slider", "Prediction (ms)", "aimPredict", 0, 200, 10 },
-            { "toggle", "Wall Check", "aimWall" },
             { "toggle", "Show FOV Circle", "aimShowFov" },
         } },
         { name = "Silent Aim", items = {
@@ -744,43 +741,29 @@ local UI = {
                     notify("Silent Aim unavailable: your executor has no hookmetamethod")
                 end
             end },
-            { "drop", "Silent Aim Method", "silentMode", { "Raycast", "Mouse", "Remote", "All" }, function()
-                if S.silent then ensureHooks() end
-            end },
-            { "drop", "Aim Part", "silentPart", { "Head", "Torso" } },
             { "slider", "Silent Aim FOV", "silentFov", 20, 600, 10 },
             { "slider", "Hit Chance (%)", "silentHit", 1, 100, 5 },
-            { "toggle", "Wall Check", "silentWall" },
             { "toggle", "Show FOV Circle", "silentShowFov" },
-        } },
-        { name = "Targeting", items = {
-            { "drop", "Target", "target", { "Auto", "Murderer", "Sheriff", "All" } },
-            { "drop", "Priority", "prio", { "Center", "Closest" } },
-            { "slider", "Max Distance", "maxDist", 50, 1500, 50 },
         } },
         { name = "Weapons", items = {
             { "toggle", "Auto Shoot", "autoShoot" },
-            { "toggle", "Auto Equip", "autoEquip" },
             { "toggle", "Kill Aura", "aura" },
             { "slider", "Kill Aura Range", "auraRange", 5, 80, 3 },
-            { "toggle", "Kill Aura Teleport", "auraTp" },
         } },
     } },
     { tab = "ESP", icon = "eye", sections = {
-        { name = "ESP", items = {
+        { name = "Players", items = {
             { "toggle", "Player ESP", "esp", function(v)
                 if not v then clearAll() end
             end },
             { "toggle", "Show Names", "labels" },
             { "toggle", "Show Distance", "dist" },
-            { "toggle", "Coin ESP", "coinEsp" },
-            { "toggle", "Gun ESP", "gunEsp" },
             { "toggle", "Role Notifier", "notify" },
         } },
-        { name = "World", items = {
+        { name = "Items", items = {
+            { "toggle", "Coin ESP", "coinEsp" },
+            { "toggle", "Gun ESP", "gunEsp" },
             { "toggle", "Fullbright", "fullbright", function() applyLighting() end },
-            { "toggle", "Custom FOV", "fovOn" },
-            { "slider", "FOV Amount", "fov", 30, 120, 5 },
         } },
     } },
     { tab = "Farm", icon = "coins", sections = {
@@ -790,7 +773,6 @@ local UI = {
             end },
             { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween" } },
             { "slider", "Farm Delay (ms)", "coinDelay", 40, 500, 10 },
-            { "slider", "Tween Speed", "coinSpeed", 20, 120, 5 },
         } },
         { name = "Gun", items = {
             { "toggle", "Auto Grab Gun", "gun" },
@@ -813,6 +795,8 @@ local UI = {
                 end
             end },
             { "slider", "JumpPower Value", "jumpVal", 50, 200, 10 },
+        } },
+        { name = "Abilities", items = {
             { "toggle", "Infinite Jump", "infjump" },
             { "toggle", "Noclip", "noclip" },
             { "toggle", "Fly", "fly" },
