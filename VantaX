@@ -40,6 +40,8 @@ local S = {
     speed = false, speedVal = 30, jump = false, jumpVal = 80,
     fly = false, flySpeed = 60, infjump = false, noclip = false,
     antiFling = true, antiVoid = true,
+    -- fling
+    flingTime = 3, loopMurd = false, loopSher = false, flingPick = "",
     -- misc
     antiafk = true, quickButton = false,
 }
@@ -55,6 +57,10 @@ local CFG = {
     maxSpin = 80,
     voidMargin = 50,     -- studs above FallenPartsDestroyHeight where Anti Void kicks in
 }
+
+-- fling state: busy = a fling (or a batch) is running, stop = cancel request
+local FLING = { busy = false, stop = false, sel = nil }
+local showSelected, PLAYER_DD   -- set further down (player picker of the Fling tab)
 
 local COLORS = {
     Murderer = Color3.fromRGB(255, 60, 60),
@@ -157,7 +163,16 @@ local function partOf(char, key)
 end
 
 -- set by "Shoot Murderer": forces the target role regardless of the Target setting
-local FORCE = { role = nil, target = nil }   -- target: part the camera is held on during a forced shot
+local FORCE = { role = nil, target = nil, part = nil }   -- target: part the camera is held on during a forced shot; part: fixed aim part
+
+-- Auto Shoot state (sheriff). active = a shot is being held, fireAt = when the trigger is pulled,
+-- endAt = when the forced aim is released, nextShot = earliest time of the next shot
+local AUTO = { active = false, fireAt = nil, endAt = 0, nextShot = 0, lastEquip = 0 }
+
+local function endAutoShot()
+    AUTO.active, AUTO.fireAt = false, nil
+    FORCE.role, FORCE.part, FORCE.target = nil, nil, nil
+end
 
 local function wantRole(role, myRole)
     if FORCE.role then return FORCE.role == "Any" or role == FORCE.role end
@@ -209,7 +224,7 @@ local function pickTarget(fov, maxDist, partKey, wall)
         if plr ~= lp then
             local char = plr.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if char and hum and hum.Health > 0 and wantRole(roleCached(plr), myRole) then
+            if char and hum and hum.Health > 0 and wantRole(FORCE.role and roleOf(plr) or roleCached(plr), myRole) then
                 local part = partOf(char, partKey)
                 if part then
                     local dist = (part.Position - camPos).Magnitude
@@ -435,7 +450,11 @@ local function computeSilent()
     SIL.rootPos = root and root.Position or SIL.camPos
     local part, pos
     if FORCE.role then
-        part, pos = pickTarget(math.huge, math.huge, "Torso", false)
+        if FORCE.part and FORCE.part.Parent then
+            part, pos = FORCE.part, FORCE.part.Position
+        else
+            part, pos = pickTarget(math.huge, math.huge, "Torso", false)
+        end
     else
         -- keep the current target while it stays valid, so the lock does not jump between players
         local held = SIL.held
@@ -752,6 +771,7 @@ local function refresh()
     updateCoinEsp()
     updateGunEsp()
     applyLighting()
+    if showSelected then showSelected() end
 end
 
 track(Players.PlayerRemoving:Connect(function(p)
@@ -872,7 +892,7 @@ end
 local shooting = false
 local warnedNoHooks = false
 local function shootMurderer(auto)
-    if shooting then return false end
+    if shooting or AUTO.active then return false end
     local function fail(msg)
         if not auto then notify(msg) end
         return false
@@ -1014,6 +1034,243 @@ local function rejoin()
 end
 
 -- ------------------------------------------------------------
+-- Fling
+-- The character sits on the target and spins at a huge speed, so the physics contact throws him away.
+-- It only works if players collide with each other in MM2 (NOT VERIFIED against the real game).
+-- Our own protections (Anti Fling, Noclip, Anti Void) are paused while it runs, then you are put back
+-- where you were.
+-- ------------------------------------------------------------
+local FLING_OFFSETS = {
+    CFrame.new(0, 1.5, 0), CFrame.new(0, -1.5, 0),
+    CFrame.new(2, 0, 0),   CFrame.new(-2, 0, 0),
+    CFrame.new(0, 0, 2),   CFrame.new(0, 0, -2),
+}
+
+local function liveParts(plr)
+    local c = plr and plr.Character
+    local h = c and c:FindFirstChildOfClass("Humanoid")
+    local r = c and c:FindFirstChild("HumanoidRootPart")
+    if h and r and h.Health > 0 then return h, r end
+    return nil
+end
+
+-- returns the reason why a fling cannot start now, or nil
+local function flingBlocked()
+    if FLING.busy then return "Already flinging (press Stop Fling to cancel)" end
+    if S.fly then return "Turn Fly off before flinging" end
+    if S.coins then return "Turn Auto Farm Coins off before flinging" end
+    local _, hum, root = myParts()
+    if not (hum and root) or hum.Health <= 0 then return "You are dead" end
+    return nil
+end
+
+-- Flings one player; returns true when he was thrown away. quiet = no notifications,
+-- inBatch = the caller (Fling All) already owns FLING.busy.
+local function flingPlayer(plr, quiet, inBatch)
+    if not inBatch then
+        local why = flingBlocked()
+        if why then
+            if not quiet then notify(why) end
+            return false
+        end
+    end
+    local _, hum, root = myParts()
+    local thum, troot = liveParts(plr)
+    if not (hum and root and thum and troot) then
+        if not quiet then notify("That player is not available") end
+        return false
+    end
+
+    FLING.busy = true
+    if not inBatch then FLING.stop = false end
+    local home = root.CFrame
+    local startPos = troot.Position
+    local oldFall = workspace.FallenPartsDestroyHeight
+    pcall(function() workspace.FallenPartsDestroyHeight = -1e9 end)   -- do not get deleted when thrown down
+
+    local flung = false
+    pcall(function()
+        local t0, n = os.clock(), 0
+        while alive and not FLING.stop and os.clock() - t0 < S.flingTime do
+            if not (root.Parent and troot.Parent and hum.Health > 0 and thum.Health > 0) then break end
+            if (troot.Position - startPos).Magnitude > 150 or troot.AssemblyLinearVelocity.Magnitude > 450 then
+                flung = true
+                break
+            end
+            n = n + 1
+            -- sit on him (a little ahead of where he is going) and spin
+            root.CFrame = troot.CFrame * FLING_OFFSETS[n % #FLING_OFFSETS + 1] + troot.AssemblyLinearVelocity * 0.1
+            root.AssemblyLinearVelocity = Vector3.new(5e7, 5e7, 5e7)
+            root.AssemblyAngularVelocity = Vector3.new(5e7, 5e7, 5e7)
+            RunService.Heartbeat:Wait()
+        end
+    end)
+
+    -- go back and stop all the spinning
+    pcall(function()
+        for _ = 1, 12 do
+            if not root.Parent then break end
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = home
+            RunService.Heartbeat:Wait()
+        end
+    end)
+    pcall(function() workspace.FallenPartsDestroyHeight = oldFall end)
+    if not inBatch then FLING.busy = false end
+    return flung
+end
+
+local function findRolePlayer(roleName)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp and roleOf(plr) == roleName and liveParts(plr) then return plr end
+    end
+    return nil
+end
+
+local function flingAndReport(plr)
+    task.spawn(function()
+        local ok = flingPlayer(plr)
+        if ok then notify("Flung " .. plr.DisplayName) end
+    end)
+end
+
+local function flingRole(roleName)
+    if roleOf(lp) == roleName then notify("You are the " .. roleName); return end
+    local plr = findRolePlayer(roleName)
+    if not plr then notify(roleName .. " not found"); return end
+    flingAndReport(plr)
+end
+
+local function flingNearest()
+    local _, _, root = myParts()
+    if not root then return end
+    local best, bd
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp then
+            local _, r = liveParts(plr)
+            if r then
+                local d = (r.Position - root.Position).Magnitude
+                if not bd or d < bd then best, bd = plr, d end
+            end
+        end
+    end
+    if not best then notify("No player to fling"); return end
+    flingAndReport(best)
+end
+
+local function flingAll()
+    local why = flingBlocked()
+    if why then notify(why); return end
+    FLING.busy, FLING.stop = true, false
+    task.spawn(function()
+        local count = 0
+        pcall(function()
+            for _, plr in ipairs(Players:GetPlayers()) do
+                if FLING.stop or not alive then break end
+                if plr ~= lp and liveParts(plr) then
+                    if flingPlayer(plr, true, true) then count = count + 1 end
+                end
+            end
+        end)
+        FLING.busy = false
+        notify("Fling All done: " .. count .. " flung")
+    end)
+end
+
+-- player picker (the menu has no dynamic list, so it cycles through the players)
+showSelected = function()
+    local plr = FLING.sel
+    if plr and not plr.Parent then FLING.sel, plr = nil, nil end
+    info("flingsel", "Selected: " .. (plr and (plr.DisplayName .. " | " .. roleOf(plr)) or "none"))
+end
+
+-- player names for the picker: "DisplayName (@username)", or just the name when both are equal
+local function playerLabel(plr)
+    if plr.DisplayName ~= plr.Name then return plr.DisplayName .. " (@" .. plr.Name .. ")" end
+    return plr.Name
+end
+
+local function playerLabels()
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp then list[#list + 1] = playerLabel(plr) end
+    end
+    table.sort(list, function(a, b) return a:lower() < b:lower() end)
+    if #list == 0 then list[1] = "(no players)" end
+    return list
+end
+
+local function playerByLabel(label)
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp and playerLabel(plr) == label then return plr end
+    end
+    return nil
+end
+
+local function pickPlayer(label)
+    S.flingPick = label
+    FLING.sel = playerByLabel(label)
+    showSelected()
+end
+
+-- re-reads the player list into the dropdown. Slate's dropdown API is not documented, so a few common
+-- method names are tried; if none of them exists the list stays as it was when the menu opened
+-- (the Next / Previous Player buttons always use the live list).
+local function refreshPlayerList()
+    local names = playerLabels()
+    if PLAYER_DD then
+        for _, m in ipairs({ "Refresh", "SetOptions", "UpdateOptions", "SetValues", "SetList" }) do
+            local fn = PLAYER_DD[m]
+            if type(fn) == "function" and pcall(fn, PLAYER_DD, names) then break end
+        end
+    end
+    if not (FLING.sel and FLING.sel.Parent) then
+        S.flingPick = names[1]
+        FLING.sel = playerByLabel(names[1])
+    end
+    showSelected()
+    return playerByLabel(names[1]) and #names or 0
+end
+
+do   -- the first player of the list is selected from the start (it is what the dropdown shows)
+    local first = playerLabels()[1]
+    S.flingPick = first
+    FLING.sel = playerByLabel(first)
+end
+track(Players.PlayerAdded:Connect(function() task.delay(0.5, refreshPlayerList) end))
+track(Players.PlayerRemoving:Connect(function() task.delay(0.5, refreshPlayerList) end))
+
+local function cycleSelected(step)
+    local list = {}
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp then list[#list + 1] = plr end
+    end
+    table.sort(list, function(a, b) return a.DisplayName:lower() < b.DisplayName:lower() end)
+    if #list == 0 then
+        FLING.sel = nil
+        showSelected()
+        return
+    end
+    local idx = 0
+    for i, plr in ipairs(list) do
+        if plr == FLING.sel then idx = i break end
+    end
+    if idx == 0 then idx = (step > 0) and 1 or #list else idx = ((idx - 1 + step) % #list) + 1 end
+    FLING.sel = list[idx]
+    S.flingPick = playerLabel(FLING.sel)
+    showSelected()
+end
+
+local function flingSelected()
+    if not (FLING.sel and FLING.sel.Parent) then
+        notify("Pick a player first (Next Player)")
+        return
+    end
+    flingAndReport(FLING.sel)
+end
+
+-- ------------------------------------------------------------
 -- Menu spec (used by Slate AND by the simple menu)
 -- label  : { "label", text }
 -- toggle : { "toggle", name, key, callback }
@@ -1068,6 +1325,33 @@ local UI = {
         } },
         { name = "On-Screen Button", items = {
             { "toggle", "Shoot / Throw Button", "quickButton" },
+        } },
+    } },
+    { tab = "Fling", icon = "wind", sections = {
+        { name = "Quick Fling", items = {
+            { "button", "Fling Murderer", function() flingRole("Murderer") end },
+            { "button", "Fling Sheriff", function() flingRole("Sheriff") end },
+            { "button", "Fling Nearest", flingNearest },
+            { "button", "Fling All", flingAll },
+            { "button", "Stop Fling", function() FLING.stop = true end },
+        } },
+        { name = "Fling Player", items = {
+            { "players", "Select Player", pickPlayer },
+            { "label", "Selected: none", "flingsel" },
+            { "button", "Fling Selected", flingSelected },
+            { "button", "Previous Player", function() cycleSelected(-1) end },
+            { "button", "Next Player", function() cycleSelected(1) end },
+            { "button", "Refresh Players", function()
+                local n = refreshPlayerList()
+                notify("Players in the server: " .. n)
+            end },
+        } },
+        { name = "Loop Fling", items = {
+            { "toggle", "Loop Fling Murderer", "loopMurd" },
+            { "toggle", "Loop Fling Sheriff", "loopSher" },
+        } },
+        { name = "Settings", items = {
+            { "slider", "Fling Duration (s)", "flingTime", 1, 8, 1 },
         } },
     } },
     { tab = "Visuals", icon = "eye", sections = {
@@ -1175,7 +1459,7 @@ end
 -- ------------------------------------------------------------
 local SETTINGS_FILE = "MM2Hub_settings.json"
 local canFile = typeof(readfile) == "function" and typeof(writefile) == "function"
-local NO_SAVE = { fly = true, noclip = true, coins = true }   -- these always start off
+local NO_SAVE = { fly = true, noclip = true, coins = true, loopMurd = true, loopSher = true, flingPick = true }   -- these always start off
 
 local RANGE, CHOICES = {}, {}
 for _, t in ipairs(UI) do
@@ -1374,6 +1658,12 @@ local function buildSlate()
                                         S[key] = v
                                         if cb then pcall(cb, v) end
                                     end,
+                                })
+                            elseif kind == "players" then
+                                local names = playerLabels()
+                                PLAYER_DD = section:Dropdown({
+                                    Name = it[2], Options = names, Default = names[1],
+                                    Callback = function(v) pcall(it[3], v) end,
                                 })
                             elseif kind == "button" then
                                 local cb = it[3]
@@ -1659,6 +1949,7 @@ local function buildFallback()
                 local kind = it[1]
                 if kind == "toggle" then addToggle(p, it[2], it[3], it[4])
                 elseif kind == "drop" then addCycle(p, it[2], it[3], it[4], it[5])
+                elseif kind == "players" then addCycle(p, it[2], "flingPick", playerLabels(), it[3])
                 elseif kind == "slider" then addStepper(p, it[2], it[3], it[4], it[5], it[6] or 1, it[7])
                 elseif kind == "button" then addButton(p, it[2], it[3])
                 elseif kind == "label" then addInfo(p, it[2], it[3]) end
@@ -1836,6 +2127,52 @@ end)
 -- camera: silent aim (target calculation) and its FOV circle
 -- Bound AFTER Roblox's camera script (Camera priority + 1): a plain RenderStepped connection can run
 -- before the camera update, which then overwrites the CFrame a forced shot just set.
+-- Auto Shoot (sheriff): runs inside the render step, right after the Silent Aim target is computed, so the
+-- shot leaves the very frame the murderer enters the FOV circle (same FOV, same target part and same
+-- line-of-sight rule as Silent Aim). The gun is kept in hand while the option is on: no equip delay.
+local function autoShootStep(now)
+    if shooting then return end
+    local char, hum = myParts()
+    if not (char and hum and hum.Health > 0) or roleOf(lp) ~= "Sheriff" then
+        if AUTO.active then endAutoShot() end
+        return
+    end
+
+    local gun = char:FindFirstChild("Gun")
+    if not (gun and gun:IsA("Tool")) then
+        if AUTO.active then endAutoShot() end
+        if now - AUTO.lastEquip > 0.4 then
+            AUTO.lastEquip = now
+            equip("Gun")
+        end
+        return
+    end
+
+    if not AUTO.active then
+        if now < AUTO.nextShot then return end
+        FORCE.role = "Murderer"   -- only the murderer counts, and roles are read fresh (not from the cache)
+        local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
+        if not (ok and part) then
+            FORCE.role = nil
+            return
+        end
+        local hooked = installHooks()
+        FORCE.part = part
+        if not hooked then FORCE.target = part end   -- no hooks: the camera has to do the aiming
+        AUTO.active = true
+        AUTO.fireAt = hooked and now or now + 0.15
+        AUTO.endAt = now + (hooked and 0.35 or 0.6)
+        AUTO.nextShot = now + 0.5
+        if hooked then pcall(computeSilent) end   -- lock the target this very frame
+    end
+
+    if AUTO.fireAt and now >= AUTO.fireAt then
+        AUTO.fireAt = nil
+        pcall(function() gun:Activate() end)
+    end
+    if now >= AUTO.endAt then endAutoShot() end
+end
+
 local RS_NAME = "MM2Hub_Aim"
 pcall(function() RunService:UnbindFromRenderStep(RS_NAME) end)
 RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, function()
@@ -1850,20 +2187,32 @@ RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, funct
 
     pcall(computeSilent)
 
+    if S.autoShoot then
+        pcall(autoShootStep, os.clock())
+    elseif AUTO.active then
+        endAutoShot()
+    end
+
     circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2)
     circSil.Visible = (S.silent or S.autoShoot) and S.silentShowFov
 
 end)
 
--- Auto Shoot (sheriff): fires as soon as the murderer is inside the FOV circle (the same FOV as Silent Aim)
--- with a clear line of sight. No delay of its own; the camera is not touched when the hooks are available.
-loop(0.03, function()
-    if not S.autoShoot or shooting then return end
-    local char, hum, root = myParts()
-    if not (char and hum and hum.Health > 0 and root) then return end
-    if roleOf(lp) ~= "Sheriff" then return end
-    local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
-    if ok and part then shootMurderer(true) end
+-- loop fling: keeps throwing the murderer / sheriff whenever the fling is free
+loop(0.3, function()
+    if FLING.busy or not (S.loopMurd or S.loopSher) or flingBlocked() then return end
+    local roles = {}
+    if S.loopMurd then roles[#roles + 1] = "Murderer" end
+    if S.loopSher then roles[#roles + 1] = "Sheriff" end
+    for _, roleName in ipairs(roles) do
+        if roleOf(lp) ~= roleName then
+            local plr = findRolePlayer(roleName)
+            if plr then
+                flingPlayer(plr, true)
+                return 0.5
+            end
+        end
+    end
 end)
 
 -- combat: kill aura (murderer)
@@ -2001,7 +2350,7 @@ local function restoreCollision()
     end
 end
 track(RunService.Stepped:Connect(function()
-    local active = S.noclip or (S.coins and S.coinNoclip)
+    local active = (S.noclip or (S.coins and S.coinNoclip)) and not FLING.busy   -- a fling needs collisions
     local char = lp.Character
     if not char then return end
     if active then
@@ -2038,7 +2387,7 @@ end))
 -- Anti Fling: nearby players' body parts stop colliding with you, so they cannot push or spin you.
 -- Their collision stays off locally until their character respawns, even after you turn this off.
 track(RunService.Stepped:Connect(function()
-    if not S.antiFling then return end
+    if not S.antiFling or FLING.busy then return end
     local _, _, root = myParts()
     if not root then return end
     for _, plr in ipairs(Players:GetPlayers()) do
@@ -2062,6 +2411,7 @@ track(RunService.Heartbeat:Connect(function()
         safeCF = nil
         return
     end
+    if FLING.busy then return end   -- our own fling: do not snap back
     local flung = S.antiFling and not S.fly
         and (root.AssemblyLinearVelocity.Magnitude > CFG.maxVelocity
             or root.AssemblyAngularVelocity.Magnitude > CFG.maxSpin)
@@ -2083,12 +2433,12 @@ end))
 env.__MM2_CLEANUP = function()
     pcall(saveSettings)   -- first: the resets below must not be saved
     alive = false
+    FLING.stop = true
     S.silent = false
     SIL.lock = false
     env.__MM2_SIL3 = nil   -- hooks that stay installed become pass-through
     S.speed, S.jump, S.fly, S.noclip, S.coins, S.gun = false, false, false, false, false, false
-    FORCE.role = nil
-    FORCE.target = nil
+    endAutoShot()
     pcall(function() RunService:UnbindFromRenderStep(RS_NAME) end)
     S.fullbright = false
     if curTween then pcall(function() curTween:Cancel() end) end
