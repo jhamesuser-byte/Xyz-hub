@@ -1,15 +1,25 @@
 -- ============================================================
 -- MM2 Hub | Murder Mystery 2 (Roblox) | Slate UI
--- Status   : Round (murderer, sheriff, gun drop, coins) | You | Script (active features, executor)
--- Aim      : Aimbot | Silent Aim | Targeting (target role, priority, part, wall check, weapon, distance) | Aim Debug
--- Combat   : Sheriff (Auto Shoot Murderer, Auto Grab Gun, Grab Gun, Shoot Murderer) | Murderer (Kill Aura)
+-- Status   : Round (murderer, sheriff, gun drop, coins) | You | Aim (live aimbot / silent aim state) | Actions | Script
+-- Combat   : Targeting (shared) | Aimbot | Silent Aim | Sheriff (Auto Shoot Murderer, Auto Grab Gun) | Murderer (Kill Aura)
 -- Visuals  : Player ESP | Names | Distance | Role Notifier | Coin ESP | Gun ESP | Fullbright
--- Movement : WalkSpeed | JumpPower | Fly | Infinite Jump | Noclip | Anti Fling | Anti Void | Teleport
+-- Movement : WalkSpeed | JumpPower | Fly | Infinite Jump | Noclip | Anti Fling | Anti Void
 -- Farm     : Auto Farm Coins (Teleport / Tween / Walk)
 -- Misc     : Anti-AFK | Rejoin | Server Hop | Unload Script
 -- Menu     : RightShift (PC) or the Slate icon (mobile).
 -- Settings : saved to MM2Hub_settings.json in the executor workspace (needs readfile/writefile).
+--
+-- Layout (search for the number):
+--   1 Setup            6 Status             11 FOV circles
+--   2 Configuration    7 Actions            12 Open the menu
+--   3 Utilities        8 Menu spec          13 Runtime loops
+--   4 Aim              9 Saved settings     14 Cleanup
+--   5 Visuals         10 Menu renderers
 -- ============================================================
+
+-- ------------------------------------------------------------
+-- 1. Setup
+-- ------------------------------------------------------------
 
 local SLATE_URL = "https://raw.githubusercontent.com/PulseZax/Slate/refs/heads/main/.lua"
 
@@ -34,25 +44,23 @@ local function track(c)
 end
 
 -- ------------------------------------------------------------
--- Configuration
--- S   : options that have a menu entry
+-- 2. Configuration
+-- ------------------------------------------------------------
+-- S   : options that have a menu entry (saved to the settings file)
 -- CFG : fixed defaults (no menu entry)
 -- ------------------------------------------------------------
 local S = {
     -- visuals
-    esp = true, labels = true, dist = true, notify = true,
+    esp = true, espFilter = "All", labels = true, dist = true, notify = true,
     coinEsp = false, gunEsp = true, fullbright = false,
-    -- aimbot
-    aimbot = false, aimFov = 150, aimSpeed = 20, aimShowFov = true, aimHold = false,
-    -- silent aim
-    silent = false, silentFov = 200, silentHit = 100, silentShowFov = false, logRemotes = false,
-    -- targeting (shared by aimbot, silent aim and auto shoot)
-    target = "Auto",     -- Auto: murderer targets everyone, everyone else targets the murderer
-    prio = "Center",     -- Center = closest to the crosshair, Closest = closest in studs
-    aimPart = "Head", silentPart = "Head",
-    wall = true,         -- only target visible players
-    aimNeedTool = true,  -- aimbot and silent aim only act while a tool is equipped
-    maxDist = 600,
+    -- aim: targeting shared by Aimbot, Silent Aim and Auto Shoot
+    target = "Auto", prio = "Center", wall = true, maxDist = 600,
+    -- aimbot (moves the camera)
+    aimbot = false, aimKey = "Always", aimPart = "Head", aimFov = 150, aimSpeed = 20,
+    aimPredict = 0, aimShowFov = true,
+    -- silent aim (redirects the weapon shot, camera untouched)
+    silent = false, silentPart = "Head", silentFov = 200, silentHit = 100,
+    silentPredict = 0, silentShowFov = false, silentLog = false,
     -- weapons
     autoShoot = false, aura = false, auraRange = 14,
     -- farm
@@ -67,6 +75,7 @@ local S = {
 }
 
 local CFG = {
+    maxPredictSpeed = 120, -- studs/s: faster targets are not led (read as lag or fling; uncalibrated)
     flingRange = 30,     -- studs: other players closer than this stop colliding with you (Anti Fling)
     maxVelocity = 300,   -- studs/s and rad/s above which Anti Fling snaps you back (uncalibrated)
     maxSpin = 80,
@@ -107,7 +116,8 @@ local function httpGet(url)
 end
 
 -- ------------------------------------------------------------
--- Utilities
+-- 3. Utilities
+-- ------------------------------------------------------------
 -- ------------------------------------------------------------
 local function myParts()
     local char = lp.Character
@@ -158,12 +168,17 @@ local function coinContainer()
     return cc
 end
 
--- ------------------------------------------------------------
--- Target selection (aimbot / silent aim / auto shoot)
--- ------------------------------------------------------------
+-- ============================================================
+-- 4. Aim: shared targeting, Aimbot, Silent Aim
+-- Targeting (Target / Priority / Visible Only / Max Distance) is shared by Aimbot, Silent Aim and Auto Shoot.
+--   Target "Auto": the Murderer targets everyone, everyone else targets the Murderer.
+--   Priority "Center": closest to the crosshair | "Closest": closest in studs.
+-- Aimbot     : turns the camera toward the target (smoothed, optional hold key, optional lead).
+-- Silent Aim : leaves the camera alone and redirects the weapon's shot (raycasts, Mouse.Hit, weapon remote).
+-- ============================================================
 local PARTS = {
-    Head = { "Head" },
-    Torso  = { "UpperTorso", "Torso", "HumanoidRootPart" },
+    Head  = { "Head" },
+    Torso = { "UpperTorso", "Torso", "HumanoidRootPart" },
 }
 
 local function partOf(char, key)
@@ -181,40 +196,35 @@ local function wantRole(role, myRole)
     if FORCE.role then return role == FORCE.role end
     local a = S.target
     if a == "All" then return true end
-    if a ~= "Auto" then return role == a end
-    -- Auto: the murderer targets everyone; everyone else targets the murderer
+    if a == "Murderer" then return role == "Murderer" end
+    if a == "Sheriff" then return role == "Sheriff" end
     if myRole == "Murderer" then return true end
     return role == "Murderer"
 end
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
-pcall(function() rayParams.RespectCanCollide = true end)   -- non-collidable map parts must not count as walls
 
--- aim debug state, filled by pickTarget and shown in the Aim tab (AIM = aimbot, SILD = silent aim)
-local AIM, SILD = {}, {}
-
--- A target is visible when nothing opaque sits between the camera and the part.
--- Nearly transparent parts (invisible walls) are skipped, up to 4 of them.
 -- dot-call (workspace.Raycast(workspace, ...)) does not go through the __namecall hook
 local function visible(cam, part, char)
-    local ignore = { lp.Character, char, cam }
+    rayParams.FilterDescendantsInstances = { lp.Character, char, cam }
     local origin = cam.CFrame.Position
-    local dir = part.Position - origin
-    for _ = 1, 4 do
-        rayParams.FilterDescendantsInstances = ignore
-        local hit = workspace.Raycast(workspace, origin, dir, rayParams)
-        if not hit then return true end
-        local inst = hit.Instance
-        if inst.Transparency < 0.9 then return false end
-        ignore[#ignore + 1] = inst
-    end
-    return false
+    local hit = workspace.Raycast(workspace, origin, part.Position - origin, rayParams)
+    return hit == nil
 end
 
--- dbg (optional) receives how many players passed each filter, so the Aim tab can say why nothing is locked
-local function pickTarget(fov, maxDist, partKey, wall, dbg)
-    if dbg then dbg.cand, dbg.range, dbg.screen, dbg.fov, dbg.blocked, dbg.name = 0, 0, 0, 0, 0, nil end
+-- Where the part will be `lead` seconds from now, from its replicated velocity.
+-- A reading above CFG.maxPredictSpeed is treated as lag or a fling and is not led.
+local function leadPosition(part, lead)
+    local pos = part.Position
+    if not lead or lead <= 0 then return pos end
+    local v = part.AssemblyLinearVelocity
+    if v.Magnitude > CFG.maxPredictSpeed then return pos end
+    return pos + v * lead
+end
+
+-- Returns part, aim position (led), player, distance in studs; or nil when nobody qualifies.
+local function pickTarget(fov, maxDist, partKey, wall, lead)
     local cam = workspace.CurrentCamera
     if not cam then return nil end
     local _, myHum = myParts()
@@ -222,32 +232,24 @@ local function pickTarget(fov, maxDist, partKey, wall, dbg)
     local myRole = roleOf(lp)
     local center = cam.ViewportSize / 2
     local camPos = cam.CFrame.Position
-    local bestPart, bestPlr
+    local bestPart, bestPlr, bestDist
     local bestKey = math.huge
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= lp then
             local char = plr.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             if char and hum and hum.Health > 0 and wantRole(roleCached(plr), myRole) then
-                if dbg then dbg.cand = dbg.cand + 1 end
                 local part = partOf(char, partKey)
                 if part then
                     local dist = (part.Position - camPos).Magnitude
                     if dist <= maxDist then
-                        if dbg then dbg.range = dbg.range + 1 end
                         local sp, on = cam:WorldToViewportPoint(part.Position)
                         if on and sp.Z > 0 then
-                            if dbg then dbg.screen = dbg.screen + 1 end
                             local dd = (Vector2.new(sp.X, sp.Y) - center).Magnitude
                             if dd <= fov then
-                                if dbg then dbg.fov = dbg.fov + 1 end
                                 local key = (S.prio == "Closest") and dist or dd
-                                if key < bestKey then
-                                    if (not wall) or visible(cam, part, char) then
-                                        bestKey, bestPart, bestPlr = key, part, plr
-                                    elseif dbg then
-                                        dbg.blocked = dbg.blocked + 1
-                                    end
+                                if key < bestKey and ((not wall) or visible(cam, part, char)) then
+                                    bestKey, bestPart, bestPlr, bestDist = key, part, plr, dist
                                 end
                             end
                         end
@@ -257,27 +259,51 @@ local function pickTarget(fov, maxDist, partKey, wall, dbg)
         end
     end
     if not bestPart then return nil end
-    if dbg then dbg.name = bestPlr.DisplayName end
-    return bestPart, bestPart.Position, bestPlr
+    return bestPart, leadPosition(bestPart, lead), bestPlr, bestDist
 end
 
--- one line of the Aim Debug label
-local function aimLine(label, d, on)
-    if not on then return label .. ": off" end
-    if d.note then return label .. ": " .. d.note end
-    if d.name then return label .. ": locked on " .. d.name end
-    return string.format("%s: no target (matching Target %d, in range %d, on screen %d, in FOV %d, behind wall %d)",
-        label, d.cand or 0, d.range or 0, d.screen or 0, d.fov or 0, d.blocked or 0)
+-- Live state shown in the Status tab (written every frame by the Aimbot and Silent Aim steps)
+local AIM = {
+    aimWhy = "off", aimPlr = nil, aimDist = 0,
+    silWhy = "off", silPlr = nil, silDist = 0,
+}
+
+-- ---------------- Aimbot ----------------
+local function aimHeld()
+    local k = S.aimKey
+    if k == "Hold RMB" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) end
+    if k == "Hold LMB" then return UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) end
+    return true   -- "Always" (also the only mode that works on touch devices)
 end
 
--- ------------------------------------------------------------
--- Silent Aim (hooks) - state shared with the hooks via env.__MM2_SIL
--- ------------------------------------------------------------
+local function aimbotStep(cam, dt)
+    AIM.aimPlr = nil
+    if not S.aimbot then AIM.aimWhy = "off"; return end
+    local char, hum = myParts()
+    if not (char and hum and hum.Health > 0) then AIM.aimWhy = "you are dead"; return end
+    if not char:FindFirstChildOfClass("Tool") then AIM.aimWhy = "no weapon equipped"; return end
+    if not aimHeld() then AIM.aimWhy = "waiting for " .. S.aimKey; return end
+    local part, pos, plr, dist = pickTarget(S.aimFov, S.maxDist, S.aimPart, S.wall, S.aimPredict / 1000)
+    if not part then AIM.aimWhy = "no target in FOV"; return end
+    AIM.aimPlr, AIM.aimDist, AIM.aimWhy = plr, dist, nil
+    local cp = cam.CFrame.Position
+    local to = pos - cp
+    if to.Magnitude < 0.01 then return end
+    -- Aim Speed is the fraction of the remaining angle closed per 1/60 s; scaled by dt so it does not depend on FPS
+    local base = math.clamp(S.aimSpeed / 100, 0.02, 1)
+    local a = 1 - (1 - base) ^ (math.clamp(dt or 1 / 60, 0, 0.1) * 60)
+    local look = cam.CFrame.LookVector:Lerp(to.Unit, a)
+    if look.Magnitude < 1e-3 then look = to.Unit end
+    cam.CFrame = CFrame.lookAt(cp, cp + look)
+end
+
+-- ---------------- Silent Aim (hooks) ----------------
+-- State shared with the hooks via env.__MM2_SIL.
 -- mode is fixed to "All" (Raycast + Remote + Mouse); kept only so hooks left over from an older run keep working
 local SIL = {
-    lock = false, pos = Vector3.zero, part = nil, mode = "All", hit = 100,
+    lock = false, pos = Vector3.zero, part = nil, mode = "All", hit = 100, rolled = true,
     camPos = Vector3.zero, rootPos = Vector3.zero, mouse = nil,
-    logOn = false, lastLog = 0,
+    logOn = false, logq = {},
 }
 pcall(function() SIL.mouse = lp:GetMouse() end)
 env.__MM2_SIL = SIL
@@ -286,42 +312,34 @@ function SIL.near(origin)
     return (origin - SIL.camPos).Magnitude < 20 or (origin - SIL.rootPos).Magnitude < 20
 end
 
+-- Hit Chance is rolled once per frame (computeSilent), so Mouse.Hit, Mouse.Target and the raycasts of one shot agree
 function SIL.roll()
-    return SIL.hit >= 100 or math.random(1, 100) <= SIL.hit
+    return SIL.rolled
 end
 
 -- IMPORTANT: inside the hooks do not use colon calls (inst:Method()): that overwrites the pending
 -- namecall name and the original method would run wrong. Property reads only.
-
--- true when the remote sits inside a Gun/Knife tool (looks up to 5 parents)
 function SIL.isWeapon(remote)
     local p = remote
-    for _ = 1, 5 do
+    for _ = 1, 3 do
         p = p and p.Parent
         if p and (p.Name == "Gun" or p.Name == "Knife") then return true end
     end
     return false
 end
 
--- "Log Weapon Remotes": prints the weapon remote path, method and argument types (4 lines per second at most),
--- so the real remote and its argument layout can be read in the console (F9)
-function SIL.logCall(remote, method, ...)
-    local now = os.clock()
-    if now - SIL.lastLog < 0.25 then return end
-    SIL.lastLog = now
-    local path, p = remote.Name, remote.Parent
-    for _ = 1, 6 do
-        if not p or p == game then break end
-        path = p.Name .. "." .. path
-        p = p.Parent
-    end
-    local args = table.pack(...)
-    local kinds = {}
-    for i = 1, args.n do kinds[i] = typeof(args[i]) end
-    print("[MM2 Hub] " .. path .. " " .. method .. "(" .. table.concat(kinds, ", ") .. ")")
+-- Debug aid (Combat > Silent Aim > Log Weapon Remotes): queues "RemoteName(Type, Type, ...)" for every weapon
+-- remote fired by the game; the frame step prints the queue. Use it to check which arguments carry the aim.
+function SIL.logRemote(remote, ...)
+    local q = SIL.logq
+    if #q >= 20 then return end
+    local types = {}
+    for i = 1, select("#", ...) do types[i] = typeof((select(i, ...))) end
+    q[#q + 1] = remote.Name .. "(" .. table.concat(types, ", ") .. ")"
 end
 
--- Weapon remote (Gun/Knife): swaps the aim Vector3/CFrame for the target (experimental heuristic)
+-- Weapon remote (Gun/Knife): swaps the aim Vector3/CFrame for the target.
+-- The argument layout is a heuristic, NOT measured against the real remotes: confirm it with Log Weapon Remotes.
 function SIL.remote(remote, ...)
     if not SIL.isWeapon(remote) or not SIL.roll() then return nil end
     local args = table.pack(...)
@@ -350,28 +368,28 @@ local function ours()
     return typeof(checkcaller) == "function" and checkcaller()
 end
 
--- The namecall hook uses its own flag (__MM2_NC2): hooks from an older version of this script stay installed
--- until you rejoin, but they only repeat the same redirect, so they do no harm.
+local function hooksState()
+    if typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then return "unavailable" end
+    if env.__MM2_NC and env.__MM2_IX then return "installed" end
+    return "not installed"
+end
+
 local function installHooks()
     if typeof(hookmetamethod) ~= "function" or typeof(getnamecallmethod) ~= "function" then
         return false
     end
     local wrap = (typeof(newcclosure) == "function") and newcclosure or function(f) return f end
 
-    if not env.__MM2_NC2 then
-        env.__MM2_NC2 = true
-        local old
-        old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
-            local m = getnamecallmethod()
-            local st = env.__MM2_SIL
-            if st and (st.lock or st.logOn) and not ours() then
-                -- weapons may use a RemoteEvent (FireServer) or a RemoteFunction (InvokeServer)
-                local remoteCall = (m == "FireServer" or m == "InvokeServer")
-                if remoteCall and st.logOn and st.isWeapon(self) then
-                    st.logCall(self, m, ...)
-                    if typeof(setnamecallmethod) == "function" then setnamecallmethod(m) end
+    if not env.__MM2_NC then
+        local okNC = pcall(function()
+            local old
+            old = hookmetamethod(game, "__namecall", wrap(function(self, ...)
+                local m = getnamecallmethod()
+                local st = env.__MM2_SIL
+                if st and st.logOn and m == "FireServer" and not ours() and st.isWeapon(self) then
+                    st.logRemote(self, ...)
                 end
-                if st.lock then
+                if st and st.lock and not ours() then
                     if self == workspace then
                         if m == "Raycast" then
                             local origin, direction, params = ...
@@ -393,7 +411,7 @@ local function installHooks()
                             end
                         end
                     end
-                    if remoteCall then
+                    if m == "FireServer" then
                         local packed = st.remote(self, ...)
                         if packed then
                             if typeof(setnamecallmethod) == "function" then setnamecallmethod(m) end
@@ -401,61 +419,94 @@ local function installHooks()
                         end
                     end
                 end
-            end
-            return old(self, ...)
-        end))
+                return old(self, ...)
+            end))
+        end)
+        if not okNC then return false end
+        env.__MM2_NC = true
     end
 
     if not env.__MM2_IX then
-        env.__MM2_IX = true
-        local oldIndex
-        oldIndex = hookmetamethod(game, "__index", wrap(function(self, key)
-            local st = env.__MM2_SIL
-            if st and st.lock and st.mouse and self == st.mouse
-                and (key == "Hit" or key == "Target") and not ours() then
-                if st.roll() then
-                    if key == "Hit" then return CFrame.new(st.pos) end
-                    return st.part
+        local okIX = pcall(function()
+            local oldIndex
+            oldIndex = hookmetamethod(game, "__index", wrap(function(self, key)
+                local st = env.__MM2_SIL
+                if st and st.lock and st.mouse and self == st.mouse
+                    and (key == "Hit" or key == "Target") and not ours() then
+                    if st.roll() then
+                        if key == "Hit" then return CFrame.new(st.pos) end
+                        return st.part
+                    end
                 end
-            end
-            return oldIndex(self, key)
-        end))
+                return oldIndex(self, key)
+            end))
+        end)
+        if not okIX then return false end
+        env.__MM2_IX = true
     end
     return true
 end
 
 local function computeSilent()
     SIL.lock = false
-    SIL.hit = FORCE.role and 100 or S.silentHit
-    SILD.note, SILD.name = nil, nil
-    if not (S.silent or FORCE.role) then return end
+    SIL.logOn = S.silentLog
+    local forced = FORCE.role ~= nil
+    SIL.hit = forced and 100 or S.silentHit
+    SIL.rolled = SIL.hit >= 100 or math.random(1, 100) <= SIL.hit
+    AIM.silPlr = nil
+    if not (S.silent or forced) then AIM.silWhy = "off"; return end
+    if hooksState() ~= "installed" then AIM.silWhy = "hooks " .. hooksState(); return end
     local cam = workspace.CurrentCamera
     local char, hum, root = myParts()
-    if not cam or not char or not hum or hum.Health <= 0 then
-        SILD.note = "no character"
-        return
-    end
-    if not FORCE.role and S.aimNeedTool and not char:FindFirstChildOfClass("Tool") then
-        SILD.note = "equip a weapon (Weapon Required is on)"
-        return
-    end
+    if not cam or not char or not hum or hum.Health <= 0 then AIM.silWhy = "you are dead"; return end
+    if not forced and not char:FindFirstChildOfClass("Tool") then AIM.silWhy = "no weapon equipped"; return end
     SIL.camPos = cam.CFrame.Position
     SIL.rootPos = root and root.Position or SIL.camPos
-    local part, pos
-    if FORCE.role then
-        part, pos = pickTarget(5000, 5000, "Torso", false)
+    local part, pos, plr, dist
+    if forced then
+        part, pos, plr, dist = pickTarget(5000, 5000, "Torso", false, S.silentPredict / 1000)
     else
-        part, pos = pickTarget(S.silentFov, S.maxDist, S.silentPart, S.wall, SILD)
+        part, pos, plr, dist = pickTarget(S.silentFov, S.maxDist, S.silentPart, S.wall, S.silentPredict / 1000)
     end
-    if part then
-        SIL.lock = true
-        SIL.pos = pos
-        SIL.part = part
+    if not part then AIM.silWhy = "no target in FOV"; return end
+    SIL.lock, SIL.pos, SIL.part = true, pos, part
+    AIM.silPlr, AIM.silDist, AIM.silWhy = plr, dist, nil
+end
+
+-- ---------------- Per-frame step ----------------
+-- FOV circles are created in section 11; until then the nil checks keep this a no-op for them.
+local circAim, circSil
+
+local function updateFovCircles()
+    if circAim then
+        circAim.Size = UDim2.fromOffset(S.aimFov * 2, S.aimFov * 2)
+        circAim.Visible = S.aimbot and S.aimShowFov
+    end
+    if circSil then
+        circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2)
+        circSil.Visible = S.silent and S.silentShowFov
     end
 end
 
+local function flushRemoteLog()
+    local q = SIL.logq
+    if #q == 0 then return end
+    SIL.logq = {}
+    for i = 1, #q do print("[MM2 Hub] weapon remote: " .. q[i]) end
+end
+
+local function aimFrame(dt)
+    local cam = workspace.CurrentCamera
+    if not cam then return end
+    pcall(computeSilent)
+    pcall(updateFovCircles)
+    local ok, err = pcall(aimbotStep, cam, dt)
+    if not ok then AIM.aimPlr, AIM.aimWhy = nil, "error: " .. tostring(err):sub(1, 60) end
+    pcall(flushRemoteLog)
+end
+
 -- ------------------------------------------------------------
--- Player ESP (Highlight + label)
+-- 5. Visuals (Player ESP, Coin ESP, Gun ESP, Lighting)
 -- ------------------------------------------------------------
 local marks = {}
 
@@ -588,6 +639,9 @@ local function applyLighting()
     Lighting.Ambient = Color3.new(1, 1, 1)
 end
 
+-- ------------------------------------------------------------
+-- 6. Status
+-- ------------------------------------------------------------
 -- Status tab labels: the menu renderers register one setter per label id, refresh() fills them in
 local INFO = {}
 local function info(id, text)
@@ -610,6 +664,31 @@ local function describe(plr, myRoot)
     return plr.DisplayName
 end
 
+-- Aim section text: what each aim feature is doing right now (the state is written every frame by aimFrame)
+local function aimStatusText()
+    local lines = {}
+    if S.aimbot then
+        lines[#lines + 1] = "Aimbot: on | key " .. S.aimKey .. " | " .. S.aimPart .. " | FOV " .. S.aimFov
+        lines[#lines + 1] = "  " .. (AIM.aimPlr
+            and ("locked on " .. AIM.aimPlr.DisplayName .. " (" .. math.floor(AIM.aimDist) .. "m)")
+            or ("idle: " .. tostring(AIM.aimWhy)))
+    else
+        lines[#lines + 1] = "Aimbot: off"
+    end
+    if S.silent then
+        lines[#lines + 1] = "Silent Aim: on | " .. S.silentPart .. " | FOV " .. S.silentFov .. " | hit " .. S.silentHit .. "%"
+        lines[#lines + 1] = "  " .. (AIM.silPlr
+            and ("locked on " .. AIM.silPlr.DisplayName .. " (" .. math.floor(AIM.silDist) .. "m)")
+            or ("idle: " .. tostring(AIM.silWhy)))
+    else
+        lines[#lines + 1] = "Silent Aim: off"
+    end
+    lines[#lines + 1] = "Hooks: " .. hooksState()
+    lines[#lines + 1] = "Targeting: " .. S.target .. " | " .. S.prio .. " | "
+        .. (S.wall and "visible only" or "through walls") .. " | max " .. S.maxDist .. "m"
+    return table.concat(lines, "\n")
+end
+
 local function updateStatus(murd, sher, myRoot)
     local coins = 0
     local cont = coinContainer()
@@ -624,7 +703,8 @@ local function updateStatus(murd, sher, myRoot)
         local h = plr.Character and plr.Character:FindFirstChildOfClass("Humanoid")
         if h and h.Health > 0 then alive = alive + 1 end
     end
-    local _, myHum = myParts()
+    local char, myHum = myParts()
+    local tool = char and char:FindFirstChildOfClass("Tool")
     info("round", "Round: " .. ((murd or sher) and "active" or "waiting")
         .. "\nMurderer: " .. describe(murd, myRoot)
         .. "\nSheriff: " .. describe(sher, myRoot)
@@ -632,8 +712,9 @@ local function updateStatus(murd, sher, myRoot)
         .. "\nCoins on map: " .. coins)
     info("me", "Role: " .. roleOf(lp)
         .. "\nHealth: " .. (myHum and (math.floor(myHum.Health) .. "/" .. math.floor(myHum.MaxHealth)) or "?")
+        .. "\nEquipped: " .. (tool and tool.Name or "nothing")
         .. "\nPlayers: " .. total .. " (" .. alive .. " alive)")
-    info("aim", aimLine("Aimbot", AIM, S.aimbot) .. "\n" .. aimLine("Silent Aim", SILD, S.silent))
+    info("aim", aimStatusText())
     info("script", "Active: " .. (activeFeatures and activeFeatures() or "?")
         .. "\n" .. EXEC .. "\nMenu: " .. menuKind)
 end
@@ -649,7 +730,8 @@ local function refresh()
         if plr ~= lp then
             local char = plr.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if S.esp and char and hum and hum.Health > 0 then
+            if S.esp and char and hum and hum.Health > 0
+                and (S.espFilter ~= "Roles only" or role ~= "Innocent") then
                 local m = ensureMark(plr, char)
                 if m then
                     local col = COLORS[role]
@@ -688,7 +770,8 @@ track(Players.PlayerRemoving:Connect(function(p)
 end))
 
 -- ------------------------------------------------------------
--- Action functions
+-- 7. Actions
+-- ------------------------------------------------------------
 -- ------------------------------------------------------------
 local curTween
 local coinTries = setmetatable({}, { __mode = "k" })   -- coins we already visited (skipped after 3 tries, e.g. bag full)
@@ -856,7 +939,8 @@ local function rejoin()
 end
 
 -- ------------------------------------------------------------
--- Menu spec (used by Slate AND by the simple menu)
+-- 8. Menu spec (used by Slate AND by the simple menu)
+-- ------------------------------------------------------------
 -- label  : { "label", text }
 -- toggle : { "toggle", name, key, callback }
 -- drop   : { "drop",   name, key, options, callback }
@@ -871,17 +955,36 @@ local UI = {
         { name = "You", items = {
             { "label", "Waiting for data...", "me" },
         } },
+        { name = "Aim", items = {
+            { "label", "Waiting for data...", "aim" },
+        } },
+        { name = "Actions", items = {
+            { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
+            { "button", "Shoot Murderer", function() shootMurderer(false) end },
+            { "button", "Equip Gun", function() if not equip("Gun") then notify("You have no Gun") end end },
+            { "button", "Equip Knife", function() if not equip("Knife") then notify("You have no Knife") end end },
+            { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
+            { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
+        } },
         { name = "Script", items = {
             { "label", "Waiting for data...", "script" },
         } },
     } },
-    { tab = "Aim", icon = "crosshair", sections = {
+    { tab = "Combat", icon = "crosshair", sections = {
+        { name = "Targeting", items = {
+            { "drop", "Target", "target", { "Auto", "Murderer", "Sheriff", "All" } },
+            { "drop", "Priority", "prio", { "Center", "Closest" } },
+            { "toggle", "Visible Only (no walls)", "wall" },
+            { "slider", "Max Distance (studs)", "maxDist", 100, 1000, 50 },
+        } },
         { name = "Aimbot", items = {
             { "toggle", "Aimbot", "aimbot" },
+            { "drop", "Aim Key", "aimKey", { "Always", "Hold RMB", "Hold LMB" } },
+            { "drop", "Aim Part", "aimPart", { "Head", "Torso" } },
             { "slider", "Aim Speed", "aimSpeed", 1, 100, 5 },
             { "slider", "Aimbot FOV", "aimFov", 20, 600, 10 },
+            { "slider", "Prediction (ms)", "aimPredict", 0, 300, 10 },
             { "toggle", "Show FOV Circle", "aimShowFov" },
-            { "toggle", "Hold Right Mouse to Aim", "aimHold" },
         } },
         { name = "Silent Aim", items = {
             { "toggle", "Silent Aim", "silent", function(v)
@@ -890,36 +993,22 @@ local UI = {
                     notify("Silent Aim unavailable: your executor has no hookmetamethod")
                 end
             end },
+            { "drop", "Silent Aim Part", "silentPart", { "Head", "Torso" } },
             { "slider", "Silent Aim FOV", "silentFov", 20, 600, 10 },
             { "slider", "Hit Chance (%)", "silentHit", 1, 100, 5 },
+            { "slider", "Prediction (ms)", "silentPredict", 0, 300, 10 },
             { "toggle", "Show FOV Circle", "silentShowFov" },
-            { "toggle", "Log Weapon Remotes (F9)", "logRemotes", function(v)
+            { "toggle", "Log Weapon Remotes (debug)", "silentLog", function(v)
                 if v and not installHooks() then
-                    S.logRemotes = false
-                    notify("Remote logging unavailable: your executor has no hookmetamethod")
+                    S.silentLog = false
+                    notify("Remote log unavailable: your executor has no hookmetamethod")
                 end
             end },
         } },
-        { name = "Targeting", items = {
-            { "drop", "Target", "target", { "Auto", "All", "Murderer", "Sheriff", "Innocent" } },
-            { "drop", "Priority", "prio", { "Center", "Closest" } },
-            { "drop", "Aimbot Part", "aimPart", { "Head", "Torso" } },
-            { "drop", "Silent Aim Part", "silentPart", { "Head", "Torso" } },
-            { "toggle", "Wall Check", "wall" },
-            { "toggle", "Weapon Required", "aimNeedTool" },
-            { "slider", "Max Distance", "maxDist", 50, 1000, 50 },
-        } },
-        { name = "Aim Debug", items = {
-            { "label", "Waiting for data...", "aim" },
-        } },
-    } },
-    { tab = "Combat", icon = "swords", sections = {
         { name = "Sheriff", items = {
             { "toggle", "Auto Shoot Murderer", "autoShoot" },
             { "toggle", "Auto Grab Gun", "gun" },
             { "drop", "Grab Mode", "gunMode", { "Touch", "Teleport" } },
-            { "button", "Shoot Murderer", function() shootMurderer(false) end },
-            { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
         } },
         { name = "Murderer", items = {
             { "toggle", "Kill Aura", "aura" },
@@ -933,6 +1022,7 @@ local UI = {
             end },
             { "toggle", "Show Names", "labels" },
             { "toggle", "Show Distance", "dist" },
+            { "drop", "ESP Filter", "espFilter", { "All", "Roles only" } },
             { "toggle", "Role Notifier", "notify" },
         } },
         { name = "World", items = {
@@ -970,10 +1060,6 @@ local UI = {
             { "toggle", "Anti Fling", "antiFling" },
             { "toggle", "Anti Void", "antiVoid" },
         } },
-        { name = "Teleport", items = {
-            { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
-            { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
-        } },
     } },
     { tab = "Farm", icon = "coins", sections = {
         { name = "Auto Farm", items = {
@@ -1005,8 +1091,8 @@ local UI = {
 }
 
 -- names of the toggles that count as "active features" in the Status tab (display-only toggles are left out)
-local QUIET = { aimShowFov = true, silentShowFov = true, labels = true, dist = true, notify = true,
-    coinNoclip = true, antiafk = true, aimHold = true, wall = true, aimNeedTool = true }
+local QUIET = { aimShowFov = true, silentShowFov = true, silentLog = true, wall = true, labels = true, dist = true,
+    notify = true, coinNoclip = true, antiafk = true }
 local TOGGLES = {}
 for _, t in ipairs(UI) do
     for _, sec in ipairs(t.sections) do
@@ -1026,7 +1112,8 @@ activeFeatures = function()
 end
 
 -- ------------------------------------------------------------
--- Saved settings (needs readfile/writefile; skipped silently without them)
+-- 9. Saved settings (needs readfile/writefile; skipped silently without them)
+-- ------------------------------------------------------------
 -- Valid ranges and choices come from the menu spec above, so a stale or hand-edited file cannot inject bad values.
 -- ------------------------------------------------------------
 local SETTINGS_FILE = "MM2Hub_settings.json"
@@ -1090,14 +1177,15 @@ local function saveSettings()
 end
 
 loadSettings()
-if (S.silent or S.logRemotes) and not installHooks() then   -- the hooks are not installed by a saved toggle alone
-    S.silent, S.logRemotes = false, false
-    notify("Silent Aim / remote logging was on in your saved settings but your executor has no hookmetamethod")
+if S.silent and not installHooks() then   -- the hooks are not installed by a saved toggle alone
+    S.silent = false
+    notify("Silent Aim was on in your saved settings but your executor has no hookmetamethod")
 end
 saved = currentSettings()
 
 -- ------------------------------------------------------------
--- Renderer 1: SLATE (selectable tabs)
+-- 10. Menu renderers: Slate (selectable tabs), then the simple menu
+-- ------------------------------------------------------------
 -- ------------------------------------------------------------
 local THEME = {
     Background = Color3.fromRGB(18, 12, 26), Surface = Color3.fromRGB(23, 16, 33),
@@ -1127,7 +1215,7 @@ local function buildSlate()
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
-            Size = UDim2.fromOffset(520, 340), MinSize = Vector2.new(420, 300),
+            Size = UDim2.fromOffset(420, 300), MinSize = Vector2.new(420, 300),
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
@@ -1242,7 +1330,7 @@ local function buildFallback()
     gui.DisplayOrder = 2147483000
 
     local win = Instance.new("Frame")
-    win.Size = UDim2.fromOffset(320, 340)
+    win.Size = UDim2.fromOffset(250, 300)
     win.Position = UDim2.fromOffset(58, 30)
     win.BackgroundColor3 = Color3.fromRGB(23, 16, 33)
     win.BorderSizePixel = 0
@@ -1309,10 +1397,7 @@ local function buildFallback()
         tb.Text = t.tab
         tb.TextColor3 = Color3.new(1, 1, 1)
         tb.Font = Enum.Font.GothamBold
-        tb.TextScaled = true
-        local tc = Instance.new("UITextSizeConstraint")
-        tc.MaxTextSize = 11
-        tc.Parent = tb
+        tb.TextSize = 10
         tb.BackgroundColor3 = DARK
         roundify(tb, 6)
         tb.Activated:Connect(function() showPage(t.tab) end)
@@ -1482,7 +1567,8 @@ local function buildFallback()
 end
 
 -- ------------------------------------------------------------
--- FOV circles (independent of the menu)
+-- 11. FOV circles (independent of the menu)
+-- ------------------------------------------------------------
 -- ------------------------------------------------------------
 local fovGui = Instance.new("ScreenGui")
 fovGui.Name = "MM2_Fov"
@@ -1507,12 +1593,13 @@ local function makeCircle(color)
     f.Parent = fovGui
     return f
 end
-local circAim = makeCircle(Color3.fromRGB(255, 255, 255))
-local circSil = makeCircle(Color3.fromRGB(190, 120, 255))
+circAim = makeCircle(Color3.fromRGB(255, 255, 255))
+circSil = makeCircle(Color3.fromRGB(190, 120, 255))
 mount(fovGui)
 
 -- ------------------------------------------------------------
--- Open the menu: Slate; if it fails, the simple menu
+-- 12. Open the menu: Slate; if it fails, the simple menu
+-- ------------------------------------------------------------
 -- ------------------------------------------------------------
 local ui
 local slateUi, slateErr = buildSlate()
@@ -1533,7 +1620,8 @@ if not slateUi then
 end
 
 -- ------------------------------------------------------------
--- Loops
+-- 13. Runtime loops
+-- ------------------------------------------------------------
 -- ------------------------------------------------------------
 -- Protected loop: an error in one pass is logged (at most every 5 s) instead of killing the loop.
 -- fn may return a number of seconds to wait before the next pass (default: interval).
@@ -1554,66 +1642,11 @@ end
 loop(0.4, refresh)
 loop(2, saveSettings)
 
--- camera: silent aim (target calculation), FOV circles, aimbot
--- Bound right after the default camera script (Camera priority + 1) so nothing overwrites the aim for that frame.
-local AIM_BIND = "MM2HubAim"
-local lastAimWarn = 0
-
-local function aimStep(dt)
-    local cam = workspace.CurrentCamera
-    if not cam then return end
-
-    SIL.logOn = S.logRemotes
-    pcall(computeSilent)
-
-    circAim.Size = UDim2.fromOffset(S.aimFov * 2, S.aimFov * 2)
-    circAim.Visible = S.aimbot and S.aimShowFov
-    circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2)
-    circSil.Visible = S.silent and S.silentShowFov
-
-    AIM.note = nil
-    if not S.aimbot then return end
-    local char, hum = myParts()
-    if not (char and hum and hum.Health > 0) then
-        AIM.note = "no character"
-        return
-    end
-    if S.aimNeedTool and not char:FindFirstChildOfClass("Tool") then
-        AIM.note = "equip a weapon (Weapon Required is on)"
-        return
-    end
-    if S.aimHold and UIS.MouseEnabled and not UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then
-        AIM.note = "waiting for right mouse button"
-        return
-    end
-
-    local part, pos = pickTarget(S.aimFov, S.maxDist, S.aimPart, S.wall, AIM)
-    if not part then return end
-    local cp = cam.CFrame.Position
-    local want = pos - cp
-    if want.Magnitude < 0.001 then return end
-    -- Aim Speed is the share of the remaining angle closed per frame at 60 fps; scaled by frame time so
-    -- the feel does not change with the frame rate (100 = instant)
-    local base = math.clamp(S.aimSpeed / 100, 0.02, 1)
-    local a = 1 - (1 - base) ^ (math.max(dt, 0) * 60)
-    local look = cam.CFrame.LookVector:Lerp(want.Unit, a)
-    if look.Magnitude < 0.001 then return end
-    cam.CFrame = CFrame.lookAt(cp, cp + look)
-end
-
-local function aimFrame(dt)
-    local ok, err = pcall(aimStep, dt)
-    if not ok and os.clock() - lastAimWarn > 5 then
-        lastAimWarn = os.clock()
-        warn("[MM2 Hub] aim: " .. tostring(err))
-    end
-end
-
-if not pcall(function()
-    RunService:BindToRenderStep(AIM_BIND, Enum.RenderPriority.Camera.Value + 1, aimFrame)
-end) then
-    track(RunService.RenderStepped:Connect(aimFrame))
-end
+-- camera frame: Silent Aim target, FOV circles, Aimbot.
+-- Bound just after the default camera script (priority Camera + 1) so the Aimbot camera write is not
+-- overwritten later in the same frame.
+pcall(function() RunService:UnbindFromRenderStep("MM2_Aim") end)
+RunService:BindToRenderStep("MM2_Aim", Enum.RenderPriority.Camera.Value + 1, aimFrame)
 
 -- combat: auto shoot (sheriff), kill aura (murderer)
 local lastShot = 0
@@ -1840,13 +1873,16 @@ track(RunService.Heartbeat:Connect(function()
 end))
 
 -- ------------------------------------------------------------
--- Cleanup (re-running the script cleans up the previous instance)
+-- 14. Cleanup (re-running the script cleans up the previous instance)
+-- ------------------------------------------------------------
 -- ------------------------------------------------------------
 env.__MM2_CLEANUP = function()
     pcall(saveSettings)   -- first: the resets below must not be saved
     alive = false
-    pcall(function() RunService:UnbindFromRenderStep(AIM_BIND) end)
+    pcall(function() RunService:UnbindFromRenderStep("MM2_Aim") end)
     S.silent = false
+    S.silentLog = false
+    SIL.logOn = false
     SIL.lock = false
     env.__MM2_SIL = nil   -- hooks that stay installed become pass-through
     S.speed, S.jump, S.fly, S.noclip, S.coins, S.gun = false, false, false, false, false, false
