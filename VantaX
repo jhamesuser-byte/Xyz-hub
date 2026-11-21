@@ -978,16 +978,8 @@ local UI = {
             { "label", "Health: ...", "hp" },
             { "label", "Players: ...", "players" },
         } },
-        { name = "Aim", items = {
+        { name = "Silent Aim", items = {
             { "label", "Silent Aim: ...", "silst" },
-        } },
-        { name = "Actions", items = {
-            { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
-            { "button", "Shoot Murderer", function() shootMurderer(false) end },
-            { "button", "Throw Knife", function() throwKnife() end },
-            { "toggle", "On-Screen Action Button", "quickButton" },
-            { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
-            { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
         } },
         { name = "Script", items = {
             { "label", "Active: ...", "active" },
@@ -997,11 +989,14 @@ local UI = {
     { tab = "Combat", icon = "crosshair", sections = {
         { name = "Sheriff", items = {
             { "toggle", "Auto Shoot Murderer", "autoShoot" },
+            { "button", "Shoot Murderer", function() shootMurderer(false) end },
             { "toggle", "Auto Grab Gun", "gun" },
+            { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
         } },
         { name = "Murderer", items = {
             { "toggle", "Kill Aura", "aura" },
             { "slider", "Kill Aura Range", "auraRange", 5, 80, 3 },
+            { "button", "Throw Knife", function() throwKnife() end },
         } },
         { name = "Silent Aim", items = {
             { "toggle", "Silent Aim", "silent", function(v)
@@ -1013,6 +1008,9 @@ local UI = {
             { "drop", "Target Part", "silentPart", { "Head", "Torso" } },
             { "slider", "FOV (Silent Aim / Auto Shoot)", "silentFov", 20, 600, 10 },
             { "toggle", "Show FOV Circle", "silentShowFov" },
+        } },
+        { name = "On-Screen Button", items = {
+            { "toggle", "Shoot / Throw Button", "quickButton" },
         } },
     } },
     { tab = "Visuals", icon = "eye", sections = {
@@ -1054,6 +1052,10 @@ local UI = {
         { name = "Other", items = {
             { "toggle", "Infinite Jump", "infjump" },
             { "toggle", "Noclip", "noclip" },
+        } },
+        { name = "Teleport", items = {
+            { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
+            { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
         } },
         { name = "Protection", items = {
             { "toggle", "Anti Fling", "antiFling" },
