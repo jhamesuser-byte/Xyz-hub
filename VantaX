@@ -46,6 +46,8 @@ local S = {
     antiafk = true, quickButton = false,
     -- animations
     runAnim = "Off",
+    -- menu window size (Slate): remembered between sessions
+    winW = 540, winH = 360,
 }
 
 local CFG = {
@@ -2160,6 +2162,8 @@ for _, t in ipairs(UI) do
     end
 end
 
+RANGE.winW, RANGE.winH = { 380, 1400 }, { 260, 900 }
+
 local function loadSettings()
     if not canFile then return end
     local okR, raw = pcall(readfile, SETTINGS_FILE)
@@ -2279,6 +2283,64 @@ local function slateLabelSetter(id, lbl)
     end
 end
 
+-- Slate does not remember its window size, so the size is read back from its frame and saved with the settings.
+local slateFrame, slateDW, slateDH
+
+local function guiRoots()
+    local roots = {}
+    pcall(function() if typeof(gethui) == "function" then roots[#roots + 1] = gethui() end end)
+    pcall(function() roots[#roots + 1] = game:GetService("CoreGui") end)
+    pcall(function() roots[#roots + 1] = lp:FindFirstChild("PlayerGui") end)
+    return roots
+end
+
+local function guiChildren()
+    local set = {}
+    for _, r in ipairs(guiRoots()) do
+        local ok, kids = pcall(function() return r:GetChildren() end)
+        if ok then for _, k in ipairs(kids) do set[k] = true end end
+    end
+    return set
+end
+
+-- Finds the window frame among the ScreenGuis created by Slate: the object whose size is closest to the size we asked for.
+local function findSlateFrame(before, reqW, reqH)
+    for _ = 1, 10 do
+        task.wait(0.4)
+        local best, bestScore
+        for _, r in ipairs(guiRoots()) do
+            local ok, kids = pcall(function() return r:GetChildren() end)
+            for _, g in ipairs(ok and kids or {}) do
+                if g:IsA("ScreenGui") and not before[g] then
+                    for _, d in ipairs(g:GetDescendants()) do
+                        if d:IsA("GuiObject") then
+                            local sz = d.AbsoluteSize
+                            local score = math.abs(sz.X - reqW) + math.abs(sz.Y - reqH)
+                            if score <= 60 and (not bestScore or score < bestScore) then best, bestScore = d, score end
+                        end
+                    end
+                end
+            end
+        end
+        if best then
+            slateFrame, slateDW, slateDH = best, best.AbsoluteSize.X - reqW, best.AbsoluteSize.Y - reqH
+            return
+        end
+    end
+end
+
+local function trackWindowSize()
+    local f = slateFrame
+    if not (f and f.Parent) then return end
+    local w = math.floor(f.AbsoluteSize.X - slateDW + 0.5)
+    local h = math.floor(f.AbsoluteSize.Y - slateDH + 0.5)
+    -- sizes outside the allowed range (hidden menu, collapsed title bar) are not remembered
+    if w >= RANGE.winW[1] and w <= RANGE.winW[2] and h >= RANGE.winH[1] and h <= RANGE.winH[2]
+        and (math.abs(w - S.winW) >= 2 or math.abs(h - S.winH) >= 2) then
+        S.winW, S.winH = w, h
+    end
+end
+
 local function buildSlate()
     local okH, src = pcall(httpGet, SLATE_URL)
     if not okH then return nil, "downloading Slate: " .. tostring(src) end
@@ -2292,15 +2354,18 @@ local function buildSlate()
     pcall(function() Slate.Theme.Preset("Violet") end)
     pcall(function() Slate:SetFontFamily("JosefinSans") end)
 
+    local reqW, reqH = S.winW, S.winH
+    local guisBefore = guiChildren()
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
-            Size = UDim2.fromOffset(540, 360), MinSize = Vector2.new(480, 320),
+            Size = UDim2.fromOffset(reqW, reqH), MinSize = Vector2.new(380, 260),
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
     if not okW or not win then return nil, "creating the window: " .. tostring(win) end
     pcall(function() win:SetBackdrop("aurora") end)
+    task.spawn(findSlateFrame, guisBefore, reqW, reqH)
 
     local created = 0
     for _, t in ipairs(UI) do
@@ -2725,6 +2790,7 @@ end
 
 loop(0.4, refresh)
 loop(2, saveSettings)
+loop(1, trackWindowSize)
 
 -- ------------------------------------------------------------
 -- On-screen action button: "Shoot Murderer" as Sheriff, "Throw Knife" as Murderer. Draggable.
