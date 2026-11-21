@@ -46,6 +46,8 @@ local S = {
     antiafk = true, quickButton = false,
     -- animations
     runAnim = "Off",
+    -- menu window size (Slate): remembered between sessions
+    menuW = 540, menuH = 360, menuSize = "Large",
 }
 
 local CFG = {
@@ -1943,6 +1945,8 @@ end))
 -- slider : { "slider", name, key, min, max, step, callback }
 -- button : { "button", name, callback }
 -- ------------------------------------------------------------
+local applyMenuScale   -- assigned next to the Slate window code
+
 local UI = {
     { tab = "Status", icon = "activity", sections = {
         { name = "Round", items = {
@@ -2105,6 +2109,9 @@ local UI = {
         } },
     } },
     { tab = "Misc", icon = "wrench", sections = {
+        { name = "Menu", items = {
+            { "drop", "Menu Size", "menuSize", { "Small", "Medium", "Large" }, function() applyMenuScale() end },
+        } },
         { name = "Utilities", items = {
             { "toggle", "Anti-AFK", "antiafk" },
             { "button", "Rejoin", rejoin },
@@ -2159,6 +2166,8 @@ for _, t in ipairs(UI) do
         end
     end
 end
+
+RANGE.menuW, RANGE.menuH = { 380, 1400 }, { 260, 900 }
 
 local function loadSettings()
     if not canFile then return end
@@ -2279,6 +2288,55 @@ local function slateLabelSetter(id, lbl)
     end
 end
 
+-- Menu size. The Slate window object exposes its frame (win.root, the same frame its resize grip changes), so the
+-- size is read and written there directly: Slate itself does not remember it between sessions, this script does.
+local slateWin
+local MENU_SIZES = { Small = { 400, 270 }, Medium = { 480, 310 }, Large = { 540, 360 } }
+
+local function screenSize()
+    local cam = workspace.CurrentCamera
+    local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
+    local okI, inset = pcall(function() return game:GetService("GuiService"):GetGuiInset() end)
+    return vp + (okI and typeof(inset) == "Vector2" and inset or Vector2.zero)
+end
+
+-- Menu Size (Misc tab): a fixed size picked with one tap. The window keeps its top-left corner where it is, so it does
+-- not jump around, and it is never larger than the screen.
+applyMenuScale = function()
+    local win = slateWin
+    if not win then return end   -- simple menu or not built yet
+    local root = win.root
+    if not (root and root.Parent) then
+        notify("Menu Size is not supported by this menu")
+        return
+    end
+    local preset = MENU_SIZES[S.menuSize] or MENU_SIZES.Medium
+    local screen = screenSize()
+    local minW, minH = 380, 260
+    pcall(function() minW, minH = win.MinSize.X, win.MinSize.Y end)
+    pcall(function() minW = math.max(minW, win:_contentFloor()) end)
+    local w = math.clamp(preset[1], minW, math.max(minW, screen.X - 20))
+    local h = math.clamp(preset[2], minH, math.max(minH, screen.Y - 20))
+    local oldW, oldH = root.Size.X.Offset, root.Size.Y.Offset
+    local k = win.scale and win.scale.Scale or 1
+    -- the window is anchored at its centre: shift the centre by half the change so the top-left corner stays put
+    root.Position = UDim2.fromOffset(root.Position.X.Offset + (w - oldW) * k / 2,
+        root.Position.Y.Offset + (h - oldH) * k / 2)
+    root.Size = UDim2.fromOffset(w, h)
+    pcall(function() win:_clampToViewport() end)   -- keeps the window on screen after the change
+end
+
+local function trackWindowSize()
+    local win = slateWin
+    if not (win and win.root and win.root.Parent) or win.Minimised then return end
+    local w, h = win.root.Size.X.Offset, win.root.Size.Y.Offset
+    -- sizes outside the allowed range (hidden or collapsed menu) are not remembered
+    if w >= RANGE.menuW[1] and w <= RANGE.menuW[2] and h >= RANGE.menuH[1] and h <= RANGE.menuH[2]
+        and (math.abs(w - S.menuW) >= 2 or math.abs(h - S.menuH) >= 2) then
+        S.menuW, S.menuH = math.floor(w), math.floor(h)
+    end
+end
+
 local function buildSlate()
     local okH, src = pcall(httpGet, SLATE_URL)
     if not okH then return nil, "downloading Slate: " .. tostring(src) end
@@ -2292,15 +2350,20 @@ local function buildSlate()
     pcall(function() Slate.Theme.Preset("Violet") end)
     pcall(function() Slate:SetFontFamily("JosefinSans") end)
 
+    -- the saved size must fit on the screen with the resize grip (bottom-right corner) visible
+    local screen = screenSize()
+    local reqW = math.clamp(S.menuW, RANGE.menuW[1], math.max(RANGE.menuW[1], screen.X - 20))
+    local reqH = math.clamp(S.menuH, RANGE.menuH[1], math.max(RANGE.menuH[1], screen.Y - 20))
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
-            Size = UDim2.fromOffset(540, 360), MinSize = Vector2.new(480, 320),
+            Size = UDim2.fromOffset(reqW, reqH), MinSize = Vector2.new(380, 260),
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
     if not okW or not win then return nil, "creating the window: " .. tostring(win) end
     pcall(function() win:SetBackdrop("aurora") end)
+    slateWin = win
 
     local created = 0
     for _, t in ipairs(UI) do
@@ -2725,6 +2788,7 @@ end
 
 loop(0.4, refresh)
 loop(2, saveSettings)
+loop(1, trackWindowSize)
 
 -- ------------------------------------------------------------
 -- On-screen action button: "Shoot Murderer" as Sheriff, "Throw Knife" as Murderer. Draggable.
