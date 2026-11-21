@@ -2326,9 +2326,22 @@ applyMenuScale = function()
     pcall(function() win:_clampToViewport() end)   -- keeps the window on screen after the change
 end
 
+-- Slate hides the tab names (icons only) when the window is narrower than 3.6 times the widest tab name plus its
+-- padding. The minimum width is raised to that, so the tabs and options stay readable at every size, Small included.
+local function keepLabelsReadable(win)
+    local ok, floor = pcall(function() return win:_railFloor() end)
+    if not (ok and type(floor) == "number") then return end
+    local labelW = math.ceil(floor * 3.6) + 4
+    if win.MinSize.X < labelW then
+        win.MinSize = Vector2.new(labelW, win.MinSize.Y)
+        pcall(function() win:_ensureWidth(true) end)
+    end
+end
+
 local function trackWindowSize()
     local win = slateWin
     if not (win and win.root and win.root.Parent) or win.Minimised then return end
+    keepLabelsReadable(win)   -- the measured tab name width can grow once the font has loaded
     local w, h = win.root.Size.X.Offset, win.root.Size.Y.Offset
     -- sizes outside the allowed range (hidden or collapsed menu) are not remembered
     if w >= RANGE.menuW[1] and w <= RANGE.menuW[2] and h >= RANGE.menuH[1] and h <= RANGE.menuH[2]
@@ -2432,6 +2445,9 @@ local function buildSlate()
         pcall(function() win:Destroy() end)
         return nil, "Slate did not create any controls"
     end
+
+    keepLabelsReadable(win)
+    pcall(function() win:_layoutRail(false) end)
 
     local shown = true
     pcall(function() win:SetVisible(true) end)
