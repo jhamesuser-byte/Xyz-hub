@@ -2281,7 +2281,7 @@ local function buildSlate()
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
-            Size = UDim2.fromOffset(540, 360), MinSize = Vector2.new(480, 320),
+            Size = UDim2.fromOffset(500, 335), MinSize = Vector2.new(440, 295),
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
