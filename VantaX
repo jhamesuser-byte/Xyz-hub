@@ -157,7 +157,16 @@ local function partOf(char, key)
 end
 
 -- set by "Shoot Murderer": forces the target role regardless of the Target setting
-local FORCE = { role = nil, target = nil }   -- target: part the camera is held on during a forced shot
+local FORCE = { role = nil, target = nil, part = nil }   -- target: part the camera is held on during a forced shot; part: fixed aim part
+
+-- Auto Shoot state (sheriff). active = a shot is being held, fireAt = when the trigger is pulled,
+-- endAt = when the forced aim is released, nextShot = earliest time of the next shot
+local AUTO = { active = false, fireAt = nil, endAt = 0, nextShot = 0, lastEquip = 0 }
+
+local function endAutoShot()
+    AUTO.active, AUTO.fireAt = false, nil
+    FORCE.role, FORCE.part, FORCE.target = nil, nil, nil
+end
 
 local function wantRole(role, myRole)
     if FORCE.role then return FORCE.role == "Any" or role == FORCE.role end
@@ -209,7 +218,7 @@ local function pickTarget(fov, maxDist, partKey, wall)
         if plr ~= lp then
             local char = plr.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
-            if char and hum and hum.Health > 0 and wantRole(roleCached(plr), myRole) then
+            if char and hum and hum.Health > 0 and wantRole(FORCE.role and roleOf(plr) or roleCached(plr), myRole) then
                 local part = partOf(char, partKey)
                 if part then
                     local dist = (part.Position - camPos).Magnitude
@@ -435,7 +444,11 @@ local function computeSilent()
     SIL.rootPos = root and root.Position or SIL.camPos
     local part, pos
     if FORCE.role then
-        part, pos = pickTarget(math.huge, math.huge, "Torso", false)
+        if FORCE.part and FORCE.part.Parent then
+            part, pos = FORCE.part, FORCE.part.Position
+        else
+            part, pos = pickTarget(math.huge, math.huge, "Torso", false)
+        end
     else
         -- keep the current target while it stays valid, so the lock does not jump between players
         local held = SIL.held
@@ -872,7 +885,7 @@ end
 local shooting = false
 local warnedNoHooks = false
 local function shootMurderer(auto)
-    if shooting then return false end
+    if shooting or AUTO.active then return false end
     local function fail(msg)
         if not auto then notify(msg) end
         return false
@@ -1836,6 +1849,52 @@ end)
 -- camera: silent aim (target calculation) and its FOV circle
 -- Bound AFTER Roblox's camera script (Camera priority + 1): a plain RenderStepped connection can run
 -- before the camera update, which then overwrites the CFrame a forced shot just set.
+-- Auto Shoot (sheriff): runs inside the render step, right after the Silent Aim target is computed, so the
+-- shot leaves the very frame the murderer enters the FOV circle (same FOV, same target part and same
+-- line-of-sight rule as Silent Aim). The gun is kept in hand while the option is on: no equip delay.
+local function autoShootStep(now)
+    if shooting then return end
+    local char, hum = myParts()
+    if not (char and hum and hum.Health > 0) or roleOf(lp) ~= "Sheriff" then
+        if AUTO.active then endAutoShot() end
+        return
+    end
+
+    local gun = char:FindFirstChild("Gun")
+    if not (gun and gun:IsA("Tool")) then
+        if AUTO.active then endAutoShot() end
+        if now - AUTO.lastEquip > 0.4 then
+            AUTO.lastEquip = now
+            equip("Gun")
+        end
+        return
+    end
+
+    if not AUTO.active then
+        if now < AUTO.nextShot then return end
+        FORCE.role = "Murderer"   -- only the murderer counts, and roles are read fresh (not from the cache)
+        local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
+        if not (ok and part) then
+            FORCE.role = nil
+            return
+        end
+        local hooked = installHooks()
+        FORCE.part = part
+        if not hooked then FORCE.target = part end   -- no hooks: the camera has to do the aiming
+        AUTO.active = true
+        AUTO.fireAt = hooked and now or now + 0.15
+        AUTO.endAt = now + (hooked and 0.35 or 0.6)
+        AUTO.nextShot = now + 0.5
+        if hooked then pcall(computeSilent) end   -- lock the target this very frame
+    end
+
+    if AUTO.fireAt and now >= AUTO.fireAt then
+        AUTO.fireAt = nil
+        pcall(function() gun:Activate() end)
+    end
+    if now >= AUTO.endAt then endAutoShot() end
+end
+
 local RS_NAME = "MM2Hub_Aim"
 pcall(function() RunService:UnbindFromRenderStep(RS_NAME) end)
 RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, function()
@@ -1850,20 +1909,15 @@ RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, funct
 
     pcall(computeSilent)
 
+    if S.autoShoot then
+        pcall(autoShootStep, os.clock())
+    elseif AUTO.active then
+        endAutoShot()
+    end
+
     circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2)
     circSil.Visible = (S.silent or S.autoShoot) and S.silentShowFov
 
-end)
-
--- Auto Shoot (sheriff): fires as soon as the murderer is inside the FOV circle (the same FOV as Silent Aim)
--- with a clear line of sight. No delay of its own; the camera is not touched when the hooks are available.
-loop(0.03, function()
-    if not S.autoShoot or shooting then return end
-    local char, hum, root = myParts()
-    if not (char and hum and hum.Health > 0 and root) then return end
-    if roleOf(lp) ~= "Sheriff" then return end
-    local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
-    if ok and part then shootMurderer(true) end
 end)
 
 -- combat: kill aura (murderer)
@@ -2087,8 +2141,7 @@ env.__MM2_CLEANUP = function()
     SIL.lock = false
     env.__MM2_SIL3 = nil   -- hooks that stay installed become pass-through
     S.speed, S.jump, S.fly, S.noclip, S.coins, S.gun = false, false, false, false, false, false
-    FORCE.role = nil
-    FORCE.target = nil
+    endAutoShot()
     pcall(function() RunService:UnbindFromRenderStep(RS_NAME) end)
     S.fullbright = false
     if curTween then pcall(function() curTween:Cancel() end) end
