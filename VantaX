@@ -1,3 +1,5 @@
+-- ============================================================
+
 local SLATE_URL = "https://raw.githubusercontent.com/PulseZax/Slate/refs/heads/main/.lua"
 
 local Players         = game:GetService("Players")
@@ -811,6 +813,74 @@ local UI = {
 }
 
 -- ------------------------------------------------------------
+-- Saved settings (needs readfile/writefile; skipped silently without them)
+-- Valid ranges and choices come from the menu spec above, so a stale or hand-edited file cannot inject bad values.
+-- ------------------------------------------------------------
+local SETTINGS_FILE = "MM2Hub_settings.json"
+local canFile = typeof(readfile) == "function" and typeof(writefile) == "function"
+local NO_SAVE = { fly = true, noclip = true, coins = true }   -- these always start off
+
+local RANGE, CHOICES = {}, {}
+for _, t in ipairs(UI) do
+    for _, sec in ipairs(t.sections) do
+        for _, it in ipairs(sec.items) do
+            if it[1] == "slider" then
+                RANGE[it[3]] = { it[4], it[5] }
+            elseif it[1] == "drop" then
+                local set = {}
+                for _, o in ipairs(it[4]) do set[o] = true end
+                CHOICES[it[3]] = set
+            end
+        end
+    end
+end
+
+local function loadSettings()
+    if not canFile then return end
+    local okR, raw = pcall(readfile, SETTINGS_FILE)
+    if not okR or type(raw) ~= "string" then return end
+    local okJ, data = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not okJ or type(data) ~= "table" then return end
+    for key, v in pairs(data) do
+        local cur = S[key]
+        if cur ~= nil and not NO_SAVE[key] and type(v) == type(cur) then
+            if type(v) == "number" then
+                local r = RANGE[key]
+                if r and v == v then S[key] = math.clamp(math.floor(v + 0.5), r[1], r[2]) end
+            elseif type(v) == "string" then
+                if CHOICES[key] and CHOICES[key][v] then S[key] = v end
+            else
+                S[key] = v
+            end
+        end
+    end
+end
+
+local saved = {}
+local function currentSettings()
+    local snap, changed = {}, false
+    for key, v in pairs(S) do
+        if not NO_SAVE[key] then
+            snap[key] = v
+            if saved[key] ~= v then changed = true end
+        end
+    end
+    return snap, changed
+end
+
+local function saveSettings()
+    if not canFile then return end
+    local snap, changed = currentSettings()
+    if not changed then return end
+    local ok = pcall(function() writefile(SETTINGS_FILE, HttpService:JSONEncode(snap)) end)
+    if ok then saved = snap end
+end
+
+loadSettings()
+if S.silent and not installHooks() then S.silent = false end   -- the hooks are not installed by a saved toggle alone
+saved = currentSettings()
+
+-- ------------------------------------------------------------
 -- Renderer 1: SLATE (selectable tabs)
 -- ------------------------------------------------------------
 local THEME = {
@@ -1236,12 +1306,24 @@ end
 -- ------------------------------------------------------------
 -- Loops
 -- ------------------------------------------------------------
-task.spawn(function()
-    while alive do
-        pcall(refresh)
-        task.wait(0.4)
-    end
-end)
+-- Protected loop: an error in one pass is logged (at most every 5 s) instead of killing the loop.
+-- fn may return a number of seconds to wait before the next pass (default: interval).
+local function loop(interval, fn)
+    task.spawn(function()
+        local lastWarn = 0
+        while alive do
+            local ok, res = pcall(fn)
+            if not ok and os.clock() - lastWarn > 5 then
+                lastWarn = os.clock()
+                warn("[MM2 Hub] " .. tostring(res))
+            end
+            task.wait((ok and type(res) == "number") and res or interval)
+        end
+    end)
+end
+
+loop(0.4, refresh)
+loop(2, saveSettings)
 
 -- camera: silent aim (target calculation), FOV circles, aimbot
 track(RunService.RenderStepped:Connect(function()
@@ -1270,97 +1352,79 @@ track(RunService.RenderStepped:Connect(function()
 end))
 
 -- combat: auto shoot, kill aura
-task.spawn(function()
-    local lastShot = 0
-    while alive do
-        local char, hum, root = myParts()
-        if char and hum and hum.Health > 0 and root then
-            local myRole = roleOf(lp)
+local lastShot = 0
+loop(0.12, function()
+    local char, hum, root = myParts()
+    if not (char and hum and hum.Health > 0 and root) then return end
+    local myRole = roleOf(lp)
 
-            if S.autoShoot and myRole == "Sheriff" and os.clock() - lastShot > 0.6 then
-                local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, CFG.silentPart, true)
-                if ok and part then
-                    local gun = equip("Gun")
-                    if gun then
-                        lastShot = os.clock()
-                        pcall(function() gun:Activate() end)
-                    end
-                end
+    if S.autoShoot and myRole == "Sheriff" and os.clock() - lastShot > 0.6 then
+        local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, CFG.silentPart, true)
+        if ok and part then
+            local gun = equip("Gun")
+            if gun then
+                lastShot = os.clock()
+                pcall(function() gun:Activate() end)
             end
+        end
+    end
 
-            if S.aura and myRole == "Murderer" then
-                local best, bd
-                for _, plr in ipairs(Players:GetPlayers()) do
-                    if plr ~= lp then
-                        local c = plr.Character
-                        local h = c and c:FindFirstChildOfClass("Humanoid")
-                        local r = c and c:FindFirstChild("HumanoidRootPart")
-                        if h and r and h.Health > 0 then
-                            local d = (r.Position - root.Position).Magnitude
-                            if d <= S.auraRange and (not bd or d < bd) then
-                                best, bd = r, d
-                            end
-                        end
-                    end
-                end
-                if best then
-                    local knife = equip("Knife")
-                    if knife then
-                        root.CFrame = CFrame.lookAt(root.Position,
-                            Vector3.new(best.Position.X, root.Position.Y, best.Position.Z))
-                        pcall(function() knife:Activate() end)
+    if S.aura and myRole == "Murderer" then
+        local best, bd
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= lp then
+                local c = plr.Character
+                local h = c and c:FindFirstChildOfClass("Humanoid")
+                local r = c and c:FindFirstChild("HumanoidRootPart")
+                if h and r and h.Health > 0 then
+                    local d = (r.Position - root.Position).Magnitude
+                    if d <= S.auraRange and (not bd or d < bd) then
+                        best, bd = r, d
                     end
                 end
             end
         end
-        task.wait(0.12)
+        if best then
+            local knife = equip("Knife")
+            if knife then
+                root.CFrame = CFrame.lookAt(root.Position,
+                    Vector3.new(best.Position.X, root.Position.Y, best.Position.Z))
+                pcall(function() knife:Activate() end)
+            end
+        end
     end
 end)
 
 -- auto farm coins (Teleport = instant hop to each coin, Tween = smooth move)
-task.spawn(function()
-    while alive do
-        if S.coins then
-            local _, hum, root = myParts()
-            if root and hum and hum.Health > 0 then
-                local coin, dist = nearestCoin(root)
-                if coin and coin.Parent then
-                    coinTries[coin] = (coinTries[coin] or 0) + 1
-                    if S.coinMode == "Tween" then
-                        local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
-                        curTween = TweenService:Create(root,
-                            TweenInfo.new(math.max(dist / CFG.coinSpeed, 0.05), Enum.EasingStyle.Linear),
-                            { CFrame = goal })
-                        curTween:Play()
-                        curTween.Completed:Wait()
-                        curTween = nil
-                    else
-                        root.CFrame = CFrame.new(coin.Position) * root.CFrame.Rotation
-                        root.AssemblyLinearVelocity = Vector3.zero
-                    end
-                    if touch and coin.Parent then
-                        pcall(touch, root, coin, 0)
-                        pcall(touch, root, coin, 1)
-                    end
-                    task.wait(S.coinDelay / 1000)
-                else
-                    task.wait(0.3)
-                end
-            else
-                task.wait(0.5)
-            end
-        else
-            task.wait(0.2)
-        end
+loop(0.2, function()
+    if not S.coins then return end
+    local _, hum, root = myParts()
+    if not (root and hum and hum.Health > 0) then return 0.5 end
+    local coin, dist = nearestCoin(root)
+    if not (coin and coin.Parent) then return 0.3 end
+    coinTries[coin] = (coinTries[coin] or 0) + 1
+    if S.coinMode == "Tween" then
+        local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
+        curTween = TweenService:Create(root,
+            TweenInfo.new(math.max(dist / CFG.coinSpeed, 0.05), Enum.EasingStyle.Linear),
+            { CFrame = goal })
+        curTween:Play()
+        curTween.Completed:Wait()
+        curTween = nil
+    else
+        root.CFrame = CFrame.new(coin.Position) * root.CFrame.Rotation
+        root.AssemblyLinearVelocity = Vector3.zero
     end
+    if touch and coin.Parent then
+        pcall(touch, root, coin, 0)
+        pcall(touch, root, coin, 1)
+    end
+    return S.coinDelay / 1000
 end)
 
 -- auto grab gun (the gun drops when the sheriff dies)
-task.spawn(function()
-    while alive do
-        if S.gun then pcall(grabGun, false) end
-        task.wait(0.25)
-    end
+loop(0.25, function()
+    if S.gun then grabGun(false) end
 end)
 
 -- movement: speed, jump, fly
@@ -1412,6 +1476,14 @@ end))
 
 -- noclip (also active during auto coins, to pass through walls)
 local wasNoclip = false
+local function restoreCollision()
+    local char = lp.Character
+    if not char then return end
+    for _, n in ipairs({ "HumanoidRootPart", "Head", "Torso", "UpperTorso", "LowerTorso" }) do
+        local p = char:FindFirstChild(n)
+        if p and p:IsA("BasePart") then p.CanCollide = true end
+    end
+end
 track(RunService.Stepped:Connect(function()
     local active = S.noclip or S.coins
     local char = lp.Character
@@ -1423,10 +1495,7 @@ track(RunService.Stepped:Connect(function()
         end
     elseif wasNoclip then
         wasNoclip = false
-        for _, n in ipairs({ "HumanoidRootPart", "Head", "Torso", "UpperTorso", "LowerTorso" }) do
-            local p = char:FindFirstChild(n)
-            if p and p:IsA("BasePart") then p.CanCollide = true end
-        end
+        restoreCollision()
     end
 end))
 
@@ -1453,15 +1522,21 @@ end))
 -- Cleanup (re-running the script cleans up the previous instance)
 -- ------------------------------------------------------------
 env.__MM2_CLEANUP = function()
+    pcall(saveSettings)   -- first: the resets below must not be saved
     alive = false
     S.silent = false
     SIL.lock = false
+    env.__MM2_SIL = nil   -- hooks that stay installed become pass-through
     S.speed, S.jump, S.fly, S.noclip, S.coins, S.gun = false, false, false, false, false, false
     FORCE.role = nil
     S.fullbright = false
     if curTween then pcall(function() curTween:Cancel() end) end
     for _, c in ipairs(conns) do pcall(function() c:Disconnect() end) end
     pcall(flyOff)
+    if wasNoclip then
+        wasNoclip = false
+        pcall(restoreCollision)
+    end
     pcall(applyLighting)
     pcall(clearAll)
     pcall(clearCoinMarks)
