@@ -21,35 +21,35 @@ local function track(c)
 end
 
 -- ------------------------------------------------------------
--- Configuracao
+-- Configuration
 -- ------------------------------------------------------------
 local S = {
     -- visual
     esp = true, labels = true, dist = true, coinEsp = false, gunEsp = true,
     fullbright = false, nofog = false, fovOn = false, fov = 70, notify = true,
     -- aimbot
-    aimbot = false, aimMode = "Legit", aimPart = "Cabeca", aimFov = 150, aimSpeed = 20,
+    aimbot = false, aimMode = "Legit", aimPart = "Head", aimFov = 150, aimSpeed = 20,
     aimPredict = 0, aimWall = true, aimTool = true, aimShowFov = true,
     -- silent aim
-    silent = false, silentMode = "Tudo", silentPart = "Cabeca", silentFov = 200, silentHit = 100,
+    silent = false, silentMode = "All", silentPart = "Head", silentFov = 200, silentHit = 100,
     silentPredict = 0, silentWall = true, silentNeedTool = true, silentShowFov = false,
-    -- alvo
-    alvo = "Auto", prio = "Centro", maxDist = 600,
-    -- armas
+    -- targeting
+    target = "Auto", prio = "Center", maxDist = 600,
+    -- weapons
     autoShoot = false, autoEquip = false, aura = false, auraRange = 14, auraTp = false,
-    -- mover
+    -- movement
     speed = false, speedVal = 30, jump = false, jumpVal = 80, infjump = false,
     noclip = false, fly = false, flySpeed = 60,
     -- farm
     coins = false, coinSpeed = 28, gun = false,
-    -- extra
+    -- misc
     antiafk = true,
 }
 
 local COLORS = {
-    Assassino = Color3.fromRGB(255, 60, 60),
-    Xerife    = Color3.fromRGB(70, 140, 255),
-    Inocente  = Color3.fromRGB(80, 230, 120),
+    Murderer = Color3.fromRGB(255, 60, 60),
+    Sheriff    = Color3.fromRGB(70, 140, 255),
+    Innocent  = Color3.fromRGB(80, 230, 120),
 }
 local touch = (typeof(firetouchinterest) == "function") and firetouchinterest or nil
 
@@ -59,7 +59,7 @@ local function notify(msg)
     end)
 end
 
--- HTTP com fallback (alguns executores nao tem game:HttpGet)
+-- HTTP with fallback (some executors do not have game:HttpGet)
 local function httpGet(url)
     local ok, res = pcall(function() return game:HttpGet(url) end)
     if ok and type(res) == "string" and #res > 0 then return res end
@@ -71,11 +71,11 @@ local function httpGet(url)
             return r.Body
         end
     end
-    error("HttpGet falhou: " .. tostring(res))
+    error("HttpGet failed: " .. tostring(res))
 end
 
 -- ------------------------------------------------------------
--- Utilidades
+-- Utilities
 -- ------------------------------------------------------------
 local function myParts()
     local char = lp.Character
@@ -92,9 +92,9 @@ local function hasTool(plr, name)
 end
 
 local function roleOf(plr)
-    if hasTool(plr, "Knife") then return "Assassino" end
-    if hasTool(plr, "Gun") then return "Xerife" end
-    return "Inocente"
+    if hasTool(plr, "Knife") then return "Murderer" end
+    if hasTool(plr, "Gun") then return "Sheriff" end
+    return "Innocent"
 end
 
 local ROLE = {}
@@ -116,7 +116,7 @@ local function equip(name)
     return nil
 end
 
--- container das moedas (cache: a busca recursiva no workspace e cara)
+-- coin container (cached: a recursive workspace search is expensive)
 local cc, ccT = nil, 0
 local function coinContainer()
     if cc and cc.Parent then return cc end
@@ -127,15 +127,15 @@ local function coinContainer()
 end
 
 -- ------------------------------------------------------------
--- Selecao de alvo (aimbot / silent / auto tiro)
+-- Target selection (aimbot / silent aim / auto shoot)
 -- ------------------------------------------------------------
 local PARTS = {
-    Cabeca = { "Head" },
+    Head = { "Head" },
     Torso  = { "UpperTorso", "Torso", "HumanoidRootPart" },
 }
 
 local function partOf(char, key)
-    for _, n in ipairs(PARTS[key] or PARTS.Cabeca) do
+    for _, n in ipairs(PARTS[key] or PARTS.Head) do
         local p = char:FindFirstChild(n)
         if p and p:IsA("BasePart") then return p end
     end
@@ -143,19 +143,19 @@ local function partOf(char, key)
 end
 
 local function wantRole(role, myRole)
-    local a = S.alvo
-    if a == "Todos" then return true end
-    if a == "Assassino" then return role == "Assassino" end
-    if a == "Xerife" then return role == "Xerife" end
-    -- Auto: o assassino mira em todos; os demais miram no assassino
-    if myRole == "Assassino" then return true end
-    return role == "Assassino"
+    local a = S.target
+    if a == "All" then return true end
+    if a == "Murderer" then return role == "Murderer" end
+    if a == "Sheriff" then return role == "Sheriff" end
+    -- Auto: the murderer targets everyone; everyone else targets the murderer
+    if myRole == "Murderer" then return true end
+    return role == "Murderer"
 end
 
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
--- chamada com ponto (workspace.Raycast(workspace, ...)) nao passa pelo hook de __namecall
+-- dot-call (workspace.Raycast(workspace, ...)) does not go through the __namecall hook
 local function visible(cam, part, char)
     rayParams.FilterDescendantsInstances = { lp.Character, char, cam }
     local origin = cam.CFrame.Position
@@ -186,7 +186,7 @@ local function pickTarget(fov, maxDist, partKey, wall, predictMs)
                         if on and sp.Z > 0 then
                             local dd = (Vector2.new(sp.X, sp.Y) - center).Magnitude
                             if dd <= fov then
-                                local key = (S.prio == "Mais perto") and dist or dd
+                                local key = (S.prio == "Closest") and dist or dd
                                 if key < bestKey and ((not wall) or visible(cam, part, char)) then
                                     bestKey, bestPart, bestPlr = key, part, plr
                                 end
@@ -206,10 +206,10 @@ local function pickTarget(fov, maxDist, partKey, wall, predictMs)
 end
 
 -- ------------------------------------------------------------
--- Silent Aim (hooks) - estado compartilhado com os hooks via env.__MM2_SIL
+-- Silent Aim (hooks) - state shared with the hooks via env.__MM2_SIL
 -- ------------------------------------------------------------
 local SIL = {
-    lock = false, pos = Vector3.zero, part = nil, mode = "Tudo", hit = 100,
+    lock = false, pos = Vector3.zero, part = nil, mode = "All", hit = 100,
     camPos = Vector3.zero, rootPos = Vector3.zero, mouse = nil,
 }
 pcall(function() SIL.mouse = lp:GetMouse() end)
@@ -223,9 +223,9 @@ function SIL.roll()
     return SIL.hit >= 100 or math.random(1, 100) <= SIL.hit
 end
 
--- IMPORTANTE: dentro dos hooks nao use chamadas com dois pontos (inst:Metodo()): isso troca o
--- nome do namecall pendente e o metodo original rodaria errado. So leitura de propriedades.
--- Remote da arma (Gun/Knife): troca Vector3/CFrame de mira pelo alvo (heuristica experimental)
+-- IMPORTANT: inside the hooks do not use colon calls (inst:Method()): that overwrites the pending
+-- namecall name and the original method would run wrong. Property reads only.
+-- Weapon remote (Gun/Knife): swaps the aim Vector3/CFrame for the target (experimental heuristic)
 function SIL.remote(remote, ...)
     local p, isWeapon = remote, false
     for _ = 1, 3 do
@@ -276,7 +276,7 @@ local function installHooks(needIndex)
             local st = env.__MM2_SIL
             if st and st.lock and not ours() then
                 local mode = st.mode
-                if (mode == "Raycast" or mode == "Tudo") and self == workspace then
+                if (mode == "Raycast" or mode == "All") and self == workspace then
                     if m == "Raycast" then
                         local origin, direction, params = ...
                         if typeof(origin) == "Vector3" and typeof(direction) == "Vector3"
@@ -297,7 +297,7 @@ local function installHooks(needIndex)
                         end
                     end
                 end
-                if (mode == "Remote" or mode == "Tudo") and m == "FireServer" then
+                if (mode == "Remote" or mode == "All") and m == "FireServer" then
                     local packed = st.remote(self, ...)
                     if packed then
                         if typeof(setnamecallmethod) == "function" then setnamecallmethod(m) end
@@ -314,7 +314,7 @@ local function installHooks(needIndex)
         local oldIndex
         oldIndex = hookmetamethod(game, "__index", wrap(function(self, key)
             local st = env.__MM2_SIL
-            if st and st.lock and (st.mode == "Mouse" or st.mode == "Tudo") and st.mouse
+            if st and st.lock and (st.mode == "Mouse" or st.mode == "All") and st.mouse
                 and self == st.mouse and (key == "Hit" or key == "Target") and not ours() then
                 if st.roll() then
                     if key == "Hit" then return CFrame.new(st.pos) end
@@ -328,7 +328,7 @@ local function installHooks(needIndex)
 end
 
 local function ensureHooks()
-    local needIndex = (S.silentMode == "Mouse" or S.silentMode == "Tudo")
+    local needIndex = (S.silentMode == "Mouse" or S.silentMode == "All")
     return installHooks(needIndex)
 end
 
@@ -352,7 +352,7 @@ local function computeSilent()
 end
 
 -- ------------------------------------------------------------
--- ESP de jogadores (Highlight + etiqueta)
+-- Player ESP (Highlight + label)
 -- ------------------------------------------------------------
 local marks = {}
 
@@ -401,7 +401,7 @@ local function ensureMark(plr, char)
     return m
 end
 
--- ESP de moedas (pontinhos; Highlight tem limite de ~31 ativos)
+-- Coin ESP (small dots; Highlight is limited to ~31 active)
 local coinMarks = {}
 local function clearCoinMarks()
     for p, bb in pairs(coinMarks) do
@@ -443,7 +443,7 @@ local function updateCoinEsp()
     end
 end
 
--- ESP da arma caida
+-- Dropped gun ESP
 local gunHl
 local function updateGunEsp()
     local drop = workspace:FindFirstChild("GunDrop")
@@ -463,7 +463,7 @@ local function updateGunEsp()
     end
 end
 
--- Iluminacao
+-- Lighting
 local fbOrig
 local function applyLighting()
     if not (S.fullbright or S.nofog) then
@@ -488,7 +488,7 @@ local function applyLighting()
     if S.nofog then Lighting.FogEnd = 1e6 end
 end
 
-local setInfo -- definido pelo menu simples (o Slate mostra os papeis nas notificacoes)
+local setInfo -- set by the simple menu (Slate shows roles through notifications)
 local lastMurd, lastSher
 
 local function refresh()
@@ -497,7 +497,7 @@ local function refresh()
     for _, plr in ipairs(Players:GetPlayers()) do
         local role = roleOf(plr)
         ROLE[plr] = role
-        if role == "Assassino" then murd = plr elseif role == "Xerife" then sher = plr end
+        if role == "Murderer" then murd = plr elseif role == "Sheriff" then sher = plr end
 
         if plr ~= lp then
             local char = plr.Character
@@ -524,15 +524,15 @@ local function refresh()
     end
 
     if S.notify then
-        if murd and murd ~= lastMurd then notify("Assassino: " .. murd.DisplayName) end
-        if sher and sher ~= lastSher then notify("Xerife: " .. sher.DisplayName) end
+        if murd and murd ~= lastMurd then notify("Murderer: " .. murd.DisplayName) end
+        if sher and sher ~= lastSher then notify("Sheriff: " .. sher.DisplayName) end
     end
     lastMurd, lastSher = murd, sher
 
     if setInfo then
-        setInfo("Assassino: " .. (murd and murd.DisplayName or "?")
-            .. "\nXerife: " .. (sher and sher.DisplayName or "?")
-            .. "\nSeu papel: " .. roleOf(lp))
+        setInfo("Murderer: " .. (murd and murd.DisplayName or "?")
+            .. "\nSheriff: " .. (sher and sher.DisplayName or "?")
+            .. "\nYour role: " .. roleOf(lp))
     end
     updateCoinEsp()
     updateGunEsp()
@@ -545,7 +545,7 @@ track(Players.PlayerRemoving:Connect(function(p)
 end))
 
 -- ------------------------------------------------------------
--- Funcoes de acao
+-- Action functions
 -- ------------------------------------------------------------
 local curTween
 local function nearestCoin(root)
@@ -574,7 +574,7 @@ local function tpToRole(roleName)
             end
         end
     end
-    notify(roleName .. " nao encontrado")
+    notify(roleName .. " not found")
 end
 
 local function serverHop()
@@ -582,12 +582,12 @@ local function serverHop()
         local ok, body = pcall(httpGet, "https://games.roblox.com/v1/games/" .. game.PlaceId
             .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true")
         if not ok then
-            notify("Falha ao listar servidores")
+            notify("Failed to fetch the server list")
             return
         end
         local ok2, data = pcall(function() return HttpService:JSONDecode(body) end)
         if not ok2 or not data or not data.data then
-            notify("Lista de servidores invalida")
+            notify("Invalid server list")
             return
         end
         local list = {}
@@ -595,7 +595,7 @@ local function serverHop()
             if s.id ~= game.JobId and s.playing < s.maxPlayers then list[#list + 1] = s end
         end
         if #list == 0 then
-            notify("Nenhum servidor livre")
+            notify("No open servers found")
             return
         end
         pcall(function()
@@ -615,115 +615,111 @@ local function rejoin()
 end
 
 -- ------------------------------------------------------------
--- Especificacao do menu (usada pelo Slate E pelo menu simples)
--- toggle : { "toggle", nome, chave, callback }
--- drop   : { "drop",   nome, chave, opcoes, callback }
--- slider : { "slider", nome, chave, min, max, passo, callback }
--- button : { "button", nome, callback }
+-- Menu spec (used by Slate AND by the simple menu)
+-- toggle : { "toggle", name, key, callback }
+-- drop   : { "drop",   name, key, options, callback }
+-- slider : { "slider", name, key, min, max, step, callback }
+-- button : { "button", name, callback }
 -- ------------------------------------------------------------
 local UI = {
-    { tab = "Combate", icon = "crosshair", sections = {
+    { tab = "Combat", icon = "crosshair", sections = {
         { name = "Aimbot", items = {
             { "toggle", "Aimbot", "aimbot" },
-            { "drop", "Modo", "aimMode", { "Legit", "Rage" } },
-            { "drop", "Parte", "aimPart", { "Cabeca", "Torso" } },
+            { "drop", "Mode", "aimMode", { "Legit", "Rage" } },
+            { "drop", "Aim part", "aimPart", { "Head", "Torso" } },
             { "slider", "FOV", "aimFov", 20, 600, 10 },
-            { "slider", "Velocidade", "aimSpeed", 1, 100, 5 },
-            { "slider", "Predicao (ms)", "aimPredict", 0, 200, 10 },
-            { "toggle", "Checar parede", "aimWall" },
-            { "toggle", "So com item", "aimTool" },
-            { "toggle", "Circulo FOV", "aimShowFov" },
+            { "slider", "Speed", "aimSpeed", 1, 100, 5 },
+            { "slider", "Prediction (ms)", "aimPredict", 0, 200, 10 },
+            { "toggle", "Wall check", "aimWall" },
+            { "toggle", "Show FOV circle", "aimShowFov" },
         } },
         { name = "Silent Aim", items = {
             { "toggle", "Silent Aim", "silent", function(v)
                 if v and not ensureHooks() then
                     S.silent = false
-                    notify("Silent Aim indisponivel: o executor nao tem hookmetamethod")
+                    notify("Silent Aim unavailable: your executor has no hookmetamethod")
                 end
             end },
-            { "drop", "Metodo", "silentMode", { "Raycast", "Mouse", "Remote", "Tudo" }, function()
+            { "drop", "Method", "silentMode", { "Raycast", "Mouse", "Remote", "All" }, function()
                 if S.silent then ensureHooks() end
             end },
-            { "drop", "Parte", "silentPart", { "Cabeca", "Torso" } },
+            { "drop", "Aim part", "silentPart", { "Head", "Torso" } },
             { "slider", "FOV", "silentFov", 20, 600, 10 },
-            { "slider", "Chance de acerto %", "silentHit", 1, 100, 5 },
-            { "slider", "Predicao (ms)", "silentPredict", 0, 200, 10 },
-            { "toggle", "Checar parede", "silentWall" },
-            { "toggle", "So com item", "silentNeedTool" },
-            { "toggle", "Circulo FOV", "silentShowFov" },
+            { "slider", "Hit chance %", "silentHit", 1, 100, 5 },
+            { "toggle", "Wall check", "silentWall" },
+            { "toggle", "Show FOV circle", "silentShowFov" },
         } },
-        { name = "Alvo", items = {
-            { "drop", "Alvo", "alvo", { "Auto", "Assassino", "Xerife", "Todos" } },
-            { "drop", "Prioridade", "prio", { "Centro", "Mais perto" } },
-            { "slider", "Distancia max", "maxDist", 50, 1500, 50 },
+        { name = "Targeting", items = {
+            { "drop", "Target", "target", { "Auto", "Murderer", "Sheriff", "All" } },
+            { "drop", "Priority", "prio", { "Center", "Closest" } },
+            { "slider", "Max distance", "maxDist", 50, 1500, 50 },
         } },
-        { name = "Armas", items = {
-            { "toggle", "Auto tiro (Xerife)", "autoShoot" },
-            { "toggle", "Auto equipar", "autoEquip" },
-            { "toggle", "Kill Aura (Assassino)", "aura" },
-            { "slider", "Alcance da aura", "auraRange", 5, 80, 3 },
-            { "toggle", "Aura com TP", "auraTp" },
+        { name = "Weapons", items = {
+            { "toggle", "Auto shoot (Sheriff)", "autoShoot" },
+            { "toggle", "Auto equip", "autoEquip" },
+            { "toggle", "Kill aura (Murderer)", "aura" },
+            { "slider", "Aura range", "auraRange", 5, 80, 3 },
+            { "toggle", "Aura teleport", "auraTp" },
         } },
     } },
     { tab = "Visual", icon = "eye", sections = {
         { name = "ESP", items = {
-            { "toggle", "ESP papeis", "esp", function(v)
+            { "toggle", "Role ESP", "esp", function(v)
                 if not v then clearAll() end
             end },
-            { "toggle", "Etiquetas", "labels" },
-            { "toggle", "Distancia", "dist" },
-            { "toggle", "ESP moedas", "coinEsp" },
-            { "toggle", "ESP arma caida", "gunEsp" },
-            { "toggle", "Notificar papeis", "notify" },
+            { "toggle", "Name labels", "labels" },
+            { "toggle", "Distance", "dist" },
+            { "toggle", "Coin ESP", "coinEsp" },
+            { "toggle", "Dropped gun ESP", "gunEsp" },
+            { "toggle", "Role notifications", "notify" },
         } },
-        { name = "Mundo", items = {
+        { name = "World", items = {
             { "toggle", "Fullbright", "fullbright", function() applyLighting() end },
-            { "toggle", "Sem neblina", "nofog", function() applyLighting() end },
-            { "toggle", "FOV da camera", "fovOn" },
-            { "slider", "Valor do FOV", "fov", 30, 120, 5 },
+            { "toggle", "Camera FOV", "fovOn" },
+            { "slider", "FOV value", "fov", 30, 120, 5 },
         } },
     } },
-    { tab = "Mover", icon = "user", sections = {
-        { name = "Movimento", items = {
+    { tab = "Movement", icon = "user", sections = {
+        { name = "Movement", items = {
             { "toggle", "Speed", "speed", function(v)
                 if not v then
                     local _, hum = myParts()
                     if hum then hum.WalkSpeed = 16 end
                 end
             end },
-            { "slider", "Velocidade", "speedVal", 16, 120, 4 },
+            { "slider", "Walk speed", "speedVal", 16, 120, 4 },
             { "toggle", "Jump", "jump", function(v)
                 if not v then
                     local _, hum = myParts()
                     if hum then hum.JumpPower = 50 end
                 end
             end },
-            { "slider", "Forca do pulo", "jumpVal", 50, 200, 10 },
-            { "toggle", "Pulo infinito", "infjump" },
+            { "slider", "Jump power", "jumpVal", 50, 200, 10 },
+            { "toggle", "Infinite jump", "infjump" },
             { "toggle", "Noclip", "noclip" },
             { "toggle", "Fly", "fly" },
-            { "slider", "Velocidade do fly", "flySpeed", 20, 150, 10 },
+            { "slider", "Fly speed", "flySpeed", 20, 150, 10 },
         } },
-        { name = "Teleporte", items = {
-            { "button", "TP -> Xerife", function() tpToRole("Xerife") end },
-            { "button", "TP -> Assassino", function() tpToRole("Assassino") end },
+        { name = "Teleport", items = {
+            { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
+            { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
         } },
     } },
-    { tab = "Farm", icon = "target", sections = {
-        { name = "Moedas e arma", items = {
-            { "toggle", "Auto-moedas", "coins", function(v)
+    { tab = "Farm", icon = "coins", sections = {
+        { name = "Coins & Gun", items = {
+            { "toggle", "Auto coins", "coins", function(v)
                 if not v and curTween then curTween:Cancel() end
             end },
-            { "slider", "Velocidade das moedas", "coinSpeed", 15, 60, 3 },
-            { "toggle", "Pegar arma caida", "gun" },
+            { "slider", "Coin speed", "coinSpeed", 15, 60, 3 },
+            { "toggle", "Grab dropped gun", "gun" },
         } },
     } },
-    { tab = "Extra", icon = "wrench", sections = {
-        { name = "Extra", items = {
+    { tab = "Misc", icon = "wrench", sections = {
+        { name = "Utilities", items = {
             { "toggle", "Anti-AFK", "antiafk" },
             { "button", "Rejoin", rejoin },
-            { "button", "Server Hop", serverHop },
-            { "button", "Descarregar script", function()
+            { "button", "Server hop", serverHop },
+            { "button", "Unload script", function()
                 if env.__MM2_CLEANUP then env.__MM2_CLEANUP() end
             end },
         } },
@@ -731,7 +727,7 @@ local UI = {
 }
 
 -- ------------------------------------------------------------
--- Renderer 1: SLATE (abas selecionaveis)
+-- Renderer 1: SLATE (selectable tabs)
 -- ------------------------------------------------------------
 local THEME = {
     Background = Color3.fromRGB(18, 12, 26), Surface = Color3.fromRGB(23, 16, 33),
@@ -747,11 +743,11 @@ local THEME = {
 
 local function buildSlate()
     local okH, src = pcall(httpGet, SLATE_URL)
-    if not okH then return nil, "download do Slate: " .. tostring(src) end
+    if not okH then return nil, "downloading Slate: " .. tostring(src) end
     local fn, err = loadstring(src, "@Slate")
-    if not fn then return nil, "compilar o Slate: " .. tostring(err) end
+    if not fn then return nil, "compiling Slate: " .. tostring(err) end
     local okL, Slate = pcall(fn)
-    if not okL or not Slate then return nil, "carregar o Slate: " .. tostring(Slate) end
+    if not okL or not Slate then return nil, "loading Slate: " .. tostring(Slate) end
 
     pcall(function() Slate:PreloadIcons({ "lucide" }) end)
     pcall(function() if Slate.Theme and Slate.Theme.Set then Slate.Theme:Set(THEME) end end)
@@ -765,7 +761,7 @@ local function buildSlate()
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
-    if not okW or not win then return nil, "criar a janela: " .. tostring(win) end
+    if not okW or not win then return nil, "creating the window: " .. tostring(win) end
     pcall(function() win:SetBackdrop("aurora") end)
 
     local created = 0
@@ -819,7 +815,7 @@ local function buildSlate()
     end
     if created == 0 then
         pcall(function() win:Destroy() end)
-        return nil, "o Slate nao criou nenhum controle"
+        return nil, "Slate did not create any controls"
     end
 
     local shown = true
@@ -834,7 +830,7 @@ local function buildSlate()
 end
 
 -- ------------------------------------------------------------
--- Renderer 2: MENU SIMPLES (reserva, sem dependencias)
+-- Renderer 2: SIMPLE MENU (fallback, no dependencies)
 -- ------------------------------------------------------------
 local function mount(gui)
     local function try(getParent)
@@ -1061,11 +1057,11 @@ local function buildFallback()
         mk("+", -32, 1)
     end
 
-    -- papeis (texto que o refresh() atualiza)
+    -- roles (text updated by refresh())
     local info = Instance.new("TextLabel")
     info.Size = UDim2.new(1, 0, 0, 48)
     info.BackgroundTransparency = 1
-    info.Text = "Assassino: ?\nXerife: ?\nSeu papel: ?"
+    info.Text = "Murderer: ?\nSheriff: ?\nYour role: ?"
     info.TextColor3 = Color3.new(1, 1, 1)
     info.Font = Enum.Font.Gotham
     info.TextSize = 12
@@ -1102,7 +1098,7 @@ local function buildFallback()
 end
 
 -- ------------------------------------------------------------
--- Circulos de FOV (independentes do menu)
+-- FOV circles (independent of the menu)
 -- ------------------------------------------------------------
 local fovGui = Instance.new("ScreenGui")
 fovGui.Name = "MM2_Fov"
@@ -1122,7 +1118,7 @@ local function makeCircle(color)
     c.Parent = f
     local s = Instance.new("UIStroke")
     s.Color = color
-    s.Thickness = 1.5
+    s.Thickness = 1
     s.Parent = f
     f.Parent = fovGui
     return f
@@ -1132,37 +1128,23 @@ local circSil = makeCircle(Color3.fromRGB(190, 120, 255))
 mount(fovGui)
 
 -- ------------------------------------------------------------
--- Abre o menu: Slate; se falhar, menu simples
+-- Open the menu: Slate; if it fails, the simple menu
 -- ------------------------------------------------------------
 local ui
 local slateUi, slateErr = buildSlate()
 if slateUi then
     ui = slateUi
 else
-    notify("Slate indisponivel (" .. tostring(slateErr):sub(1, 90) .. "). Usando menu simples.")
+    notify("Slate unavailable (" .. tostring(slateErr):sub(1, 90) .. "). Using the simple menu.")
     ui = buildFallback()
 end
 
--- botao fixo "MM2" (abre/fecha o menu por toque)
-local dockGui = Instance.new("ScreenGui")
-dockGui.Name = "MM2_Dock"
-dockGui.ResetOnSpawn = false
-dockGui.IgnoreGuiInset = true
-dockGui.DisplayOrder = 2147482998
-do
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.fromOffset(44, 44)
-    b.Position = UDim2.new(0, 6, 0.5, -22)
-    b.BackgroundColor3 = PURPLE
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 13
-    b.Text = "MM2"
-    roundify(b)
-    b.Activated:Connect(function() pcall(ui.toggle) end)
-    b.Parent = dockGui
+-- the simple menu has no built-in toggle key, so give it RightShift (Slate handles its own)
+if not slateUi then
+    track(UIS.InputBegan:Connect(function(input, processed)
+        if not processed and input.KeyCode == Enum.KeyCode.RightShift then pcall(ui.toggle) end
+    end))
 end
-mount(dockGui)
 
 -- ------------------------------------------------------------
 -- Loops
@@ -1174,7 +1156,7 @@ task.spawn(function()
     end
 end)
 
--- camera: silent (calculo do alvo), circulos de FOV, FOV da camera, aimbot
+-- camera: silent aim (target calculation), FOV circles, camera FOV, aimbot
 track(RunService.RenderStepped:Connect(function()
     local cam = workspace.CurrentCamera
     if not cam then return end
@@ -1207,7 +1189,7 @@ track(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- combate: auto equipar, auto tiro, kill aura
+-- combat: auto equip, auto shoot, kill aura
 task.spawn(function()
     local lastShot = 0
     while alive do
@@ -1216,11 +1198,11 @@ task.spawn(function()
             local myRole = roleOf(lp)
 
             if S.autoEquip and not char:FindFirstChildOfClass("Tool") then
-                if myRole == "Xerife" then equip("Gun")
-                elseif myRole == "Assassino" then equip("Knife") end
+                if myRole == "Sheriff" then equip("Gun")
+                elseif myRole == "Murderer" then equip("Knife") end
             end
 
-            if S.autoShoot and myRole == "Xerife" and os.clock() - lastShot > 0.6 then
+            if S.autoShoot and myRole == "Sheriff" and os.clock() - lastShot > 0.6 then
                 local ok, part = pcall(pickTarget, S.silentFov, S.maxDist, S.silentPart, true, 0)
                 if ok and part then
                     local gun = equip("Gun")
@@ -1231,7 +1213,7 @@ task.spawn(function()
                 end
             end
 
-            if S.aura and myRole == "Assassino" then
+            if S.aura and myRole == "Murderer" then
                 local best, bd
                 for _, plr in ipairs(Players:GetPlayers()) do
                     if plr ~= lp then
@@ -1265,7 +1247,7 @@ task.spawn(function()
     end
 end)
 
--- auto-moedas (tween ate a moeda mais proxima)
+-- auto coins (tween to the nearest coin)
 task.spawn(function()
     while alive do
         if S.coins then
@@ -1297,7 +1279,7 @@ task.spawn(function()
     end
 end)
 
--- pegar arma caida (aparece quando o xerife morre)
+-- grab dropped gun (appears when the sheriff dies)
 task.spawn(function()
     while alive do
         if S.gun and not hasTool(lp, "Gun") and not hasTool(lp, "Knife") then
@@ -1318,7 +1300,7 @@ task.spawn(function()
     end
 end)
 
--- movimento: speed, jump, fly
+-- movement: speed, jump, fly
 local fly = { bv = nil, bg = nil }
 local function flyOff()
     if fly.bv then
@@ -1365,7 +1347,7 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 
--- noclip (tambem durante o auto-moedas, para atravessar paredes)
+-- noclip (also active during auto coins, to pass through walls)
 local wasNoclip = false
 track(RunService.Stepped:Connect(function()
     local active = S.noclip or S.coins
@@ -1385,7 +1367,7 @@ track(RunService.Stepped:Connect(function()
     end
 end))
 
--- pulo infinito
+-- infinite jump
 track(UIS.JumpRequest:Connect(function()
     if S.infjump then
         local _, hum = myParts()
@@ -1405,7 +1387,7 @@ track(lp.Idled:Connect(function()
 end))
 
 -- ------------------------------------------------------------
--- Cleanup (reexecutar o script limpa a instancia anterior)
+-- Cleanup (re-running the script cleans up the previous instance)
 -- ------------------------------------------------------------
 env.__MM2_CLEANUP = function()
     alive = false
@@ -1429,8 +1411,7 @@ env.__MM2_CLEANUP = function()
     end
     pcall(ui.destroy)
     pcall(function() fovGui:Destroy() end)
-    pcall(function() dockGui:Destroy() end)
     env.__MM2_CLEANUP = nil
 end
 
-notify("MM2 Hub carregado (" .. (slateUi and "Slate" or "menu simples") .. ").")
+notify("MM2 Hub loaded (" .. (slateUi and "Slate" or "simple menu") .. ").")
