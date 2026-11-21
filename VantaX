@@ -47,7 +47,7 @@ local S = {
     -- animations
     runAnim = "Off",
     -- menu window size (Slate): remembered between sessions
-    winW = 540, winH = 360, menuScale = 100,
+    menuW = 480, menuH = 310, menuSize = "Medium",
 }
 
 local CFG = {
@@ -2110,7 +2110,7 @@ local UI = {
     } },
     { tab = "Misc", icon = "wrench", sections = {
         { name = "Menu", items = {
-            { "slider", "Menu Size (%)", "menuScale", 50, 150, 5, function() applyMenuScale() end },
+            { "drop", "Menu Size", "menuSize", { "Small", "Medium", "Large" }, function() applyMenuScale() end },
         } },
         { name = "Utilities", items = {
             { "toggle", "Anti-AFK", "antiafk" },
@@ -2167,7 +2167,7 @@ for _, t in ipairs(UI) do
     end
 end
 
-RANGE.winW, RANGE.winH = { 380, 1400 }, { 260, 900 }
+RANGE.menuW, RANGE.menuH = { 380, 1400 }, { 260, 900 }
 
 local function loadSettings()
     if not canFile then return end
@@ -2291,7 +2291,7 @@ end
 -- Menu size. The Slate window object exposes its frame (win.root, the same frame its resize grip changes), so the
 -- size is read and written there directly: Slate itself does not remember it between sessions, this script does.
 local slateWin
-local BASE_W, BASE_H = 540, 360   -- 100 % of the Menu Size slider
+local MENU_SIZES = { Small = { 400, 270 }, Medium = { 480, 310 }, Large = { 540, 360 } }
 
 local function screenSize()
     local cam = workspace.CurrentCamera
@@ -2300,22 +2300,29 @@ local function screenSize()
     return vp + (okI and typeof(inset) == "Vector2" and inset or Vector2.zero)
 end
 
--- Menu Size (Misc tab): resizes the window like its resize grip would, never beyond the screen
+-- Menu Size (Misc tab): a fixed size picked with one tap. The window keeps its top-left corner where it is, so it does
+-- not jump around, and it is never larger than the screen.
 applyMenuScale = function()
     local win = slateWin
     if not win then return end   -- simple menu or not built yet
-    if not (win.root and win.root.Parent) then
+    local root = win.root
+    if not (root and root.Parent) then
         notify("Menu Size is not supported by this menu")
         return
     end
-    local pct = math.clamp(S.menuScale, 50, 150) / 100
+    local preset = MENU_SIZES[S.menuSize] or MENU_SIZES.Medium
     local screen = screenSize()
     local minW, minH = 380, 260
     pcall(function() minW, minH = win.MinSize.X, win.MinSize.Y end)
     pcall(function() minW = math.max(minW, win:_contentFloor()) end)
-    local w = math.clamp(math.floor(BASE_W * pct + 0.5), minW, math.max(minW, screen.X - 20))
-    local h = math.clamp(math.floor(BASE_H * pct + 0.5), minH, math.max(minH, screen.Y - 20))
-    win.root.Size = UDim2.fromOffset(w, h)
+    local w = math.clamp(preset[1], minW, math.max(minW, screen.X - 20))
+    local h = math.clamp(preset[2], minH, math.max(minH, screen.Y - 20))
+    local oldW, oldH = root.Size.X.Offset, root.Size.Y.Offset
+    local k = win.scale and win.scale.Scale or 1
+    -- the window is anchored at its centre: shift the centre by half the change so the top-left corner stays put
+    root.Position = UDim2.fromOffset(root.Position.X.Offset + (w - oldW) * k / 2,
+        root.Position.Y.Offset + (h - oldH) * k / 2)
+    root.Size = UDim2.fromOffset(w, h)
     pcall(function() win:_clampToViewport() end)   -- keeps the window on screen after the change
 end
 
@@ -2324,9 +2331,9 @@ local function trackWindowSize()
     if not (win and win.root and win.root.Parent) or win.Minimised then return end
     local w, h = win.root.Size.X.Offset, win.root.Size.Y.Offset
     -- sizes outside the allowed range (hidden or collapsed menu) are not remembered
-    if w >= RANGE.winW[1] and w <= RANGE.winW[2] and h >= RANGE.winH[1] and h <= RANGE.winH[2]
-        and (math.abs(w - S.winW) >= 2 or math.abs(h - S.winH) >= 2) then
-        S.winW, S.winH = math.floor(w), math.floor(h)
+    if w >= RANGE.menuW[1] and w <= RANGE.menuW[2] and h >= RANGE.menuH[1] and h <= RANGE.menuH[2]
+        and (math.abs(w - S.menuW) >= 2 or math.abs(h - S.menuH) >= 2) then
+        S.menuW, S.menuH = math.floor(w), math.floor(h)
     end
 end
 
@@ -2345,8 +2352,8 @@ local function buildSlate()
 
     -- the saved size must fit on the screen with the resize grip (bottom-right corner) visible
     local screen = screenSize()
-    local reqW = math.clamp(S.winW, RANGE.winW[1], math.max(RANGE.winW[1], screen.X - 20))
-    local reqH = math.clamp(S.winH, RANGE.winH[1], math.max(RANGE.winH[1], screen.Y - 20))
+    local reqW = math.clamp(S.menuW, RANGE.menuW[1], math.max(RANGE.menuW[1], screen.X - 20))
+    local reqH = math.clamp(S.menuH, RANGE.menuH[1], math.max(RANGE.menuH[1], screen.Y - 20))
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
