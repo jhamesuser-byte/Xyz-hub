@@ -374,10 +374,13 @@ local FORCE = { role = nil, target = nil, part = nil }   -- target: part the cam
 
 -- Auto Shoot state (sheriff). active = a shot is being held, fireAt = when the trigger is pulled,
 -- endAt = when the forced aim is released, nextShot = earliest time of the next shot
-local AUTO = { active = false, fireAt = nil, endAt = 0, nextShot = 0, lastEquip = 0 }
+-- heldSince = when the gun came into the hand, equipped = we pulled it out ourselves (so we may put it away),
+-- seenAt = last time the murderer was inside the FOV, part = the part of the shot being held
+local AUTO = { active = false, fireAt = nil, endAt = 0, nextShot = 0, lastEquip = 0,
+    heldSince = nil, equipped = false, seenAt = 0, part = nil }
 
 local function endAutoShot()
-    AUTO.active, AUTO.fireAt = false, nil
+    AUTO.active, AUTO.fireAt, AUTO.part = false, nil, nil
     FORCE.role, FORCE.part, FORCE.target = nil, nil, nil
 end
 
@@ -570,6 +573,28 @@ end
 -- True when the remote sits inside the Knife tool and looks like the throw: its name contains "throw"
 -- (second result true), or it carries a position argument (second result false).
 function SIL.isKnifeThrow(remote, ...)
+    -- Auto Shoot: record the game's own gun shot (a remote inside the Gun that carries a position) the first
+    -- time you shoot by hand, so it can be replayed at the murderer. Our own replays are not recorded.
+    if not SIL.replaying and typeof(remote) == "Instance" then
+        local g, path, inGun = remote, {}, false
+        for _ = 1, 6 do
+            if not g then break end
+            if g.Name == "Gun" then inGun = true break end
+            table.insert(path, 1, g.Name)
+            g = g.Parent
+        end
+        if inGun then
+            for i = 1, select("#", ...) do
+                local t = typeof((select(i, ...)))
+                if t == "Vector3" or t == "CFrame" then
+                    local seen = table.pack(remote, remote:IsA("RemoteFunction") and "InvokeServer" or "FireServer", ...)
+                    seen.path = path
+                    SIL.gunSeen = seen
+                    break
+                end
+            end
+        end
+    end
     local p, inKnife = remote, false
     for _ = 1, 5 do
         p = p and p.Parent
@@ -596,6 +621,7 @@ local function installHooks()
         return false
     end
     local wrap = (typeof(newcclosure) == "function") and newcclosure or function(f) return f end
+    SIL.learnThrow = true   -- records the game's own knife throw and gun shot (see SIL.isKnifeThrow)
 
     if not env.__MM2_NC3 then
         env.__MM2_NC3 = true
@@ -1127,6 +1153,7 @@ end
 -- Returns true when a shot was started. auto = called by Auto Shoot, so no notifications.
 local shooting = false
 local warnedNoHooks = false
+local fireGun   -- defined below (needs learnedArgs)
 local function shootMurderer(auto)
     if shooting or AUTO.active then return false end
     local function fail(msg)
@@ -1163,7 +1190,7 @@ local function shootMurderer(auto)
                 end
                 if ready and not fired then
                     fired = true
-                    pcall(function() gun:Activate() end)
+                    fireGun(gun, part)
                     task.wait(0.35)
                     break
                 end
@@ -1236,6 +1263,32 @@ local function learnedArgs(seen, origin, tpos)
         end
     end
     return out
+end
+
+-- Fires the gun at a part. If the game's own shot call was recorded (shoot once by hand), it is replayed with
+-- the part's position swapped in; otherwise the tool is activated and the Silent Aim hooks do the aiming.
+fireGun = function(gun, part)
+    local seen = SIL.gunSeen
+    if seen and seen.path and part and part.Parent then
+        local remote = gun
+        for _, name in ipairs(seen.path) do
+            remote = remote and remote:FindFirstChild(name)
+        end
+        if remote and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
+            local _, _, root = myParts()
+            local args = learnedArgs(seen, root and root.Position or Vector3.zero, part.Position)
+            SIL.replaying = true
+            if remote:IsA("RemoteFunction") then
+                task.spawn(function() pcall(function() remote:InvokeServer(table.unpack(args, 1, args.n)) end) end)
+            else
+                pcall(function() remote:FireServer(table.unpack(args, 1, args.n)) end)
+            end
+            SIL.replaying = false
+            return true
+        end
+    end
+    pcall(function() gun:Activate() end)
+    return false
 end
 
 local function throwKnife()
@@ -2559,35 +2612,54 @@ end)
 -- before the camera update, which then overwrites the CFrame a forced shot just set.
 -- Auto Shoot (sheriff): runs inside the render step, right after the Silent Aim target is computed, so the
 -- shot leaves the very frame the murderer enters the FOV circle (same FOV, same target part and same
--- line-of-sight rule as Silent Aim). The gun is kept in hand while the option is on: no equip delay.
+-- line-of-sight rule as Silent Aim). The gun is pulled out only when the murderer is inside the FOV and is put
+-- away again once he has been outside it for a while.
 local function autoShootStep(now)
     if shooting then return end
     local char, hum = myParts()
     if not (char and hum and hum.Health > 0) or roleOf(lp) ~= "Sheriff" then
         if AUTO.active then endAutoShot() end
+        AUTO.heldSince, AUTO.equipped = nil, false
         return
     end
+
+    -- is the murderer inside the FOV circle (and visible)? Same rule as Silent Aim
+    local part = AUTO.part
+    if not AUTO.active then
+        FORCE.role = "Murderer"   -- only the murderer counts, and roles are read fresh (not from the cache)
+        local ok, p = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
+        FORCE.role = nil
+        part = ok and p or nil
+    end
+    if part then AUTO.seenAt = now end
 
     local gun = char:FindFirstChild("Gun")
     if not (gun and gun:IsA("Tool")) then
         if AUTO.active then endAutoShot() end
-        if now - AUTO.lastEquip > 0.4 then
+        AUTO.heldSince = nil
+        -- the gun only comes out when the murderer is inside the FOV
+        if part and now - AUTO.lastEquip > 0.4 then
             AUTO.lastEquip = now
-            equip("Gun")
+            AUTO.equipped = equip("Gun") ~= nil
         end
         return
     end
+    AUTO.heldSince = AUTO.heldSince or now
 
     if not AUTO.active then
-        if now < AUTO.nextShot then return end
-        FORCE.role = "Murderer"   -- only the murderer counts, and roles are read fresh (not from the cache)
-        local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
-        if not (ok and part) then
-            FORCE.role = nil
+        if not part then
+            -- the murderer left the FOV: put away the gun we pulled out ourselves
+            if AUTO.equipped and now - AUTO.seenAt > 1.5 then
+                AUTO.equipped, AUTO.heldSince = false, nil
+                pcall(function() hum:UnequipTools() end)
+            end
             return
         end
+        if now < AUTO.nextShot or now - AUTO.heldSince < 0.3 then return end   -- let the equip settle
+        FORCE.role = "Murderer"
         local hooked = installHooks()
         FORCE.part = part
+        AUTO.part = part
         if not hooked then FORCE.target = part end   -- no hooks: the camera has to do the aiming
         AUTO.active = true
         AUTO.fireAt = hooked and now or now + 0.15
@@ -2598,7 +2670,7 @@ local function autoShootStep(now)
 
     if AUTO.fireAt and now >= AUTO.fireAt then
         AUTO.fireAt = nil
-        pcall(function() gun:Activate() end)
+        fireGun(gun, AUTO.part)
     end
     if now >= AUTO.endAt then endAutoShot() end
 end
