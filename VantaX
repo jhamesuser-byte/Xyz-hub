@@ -54,6 +54,7 @@ local CFG = {
     aimPart = "Head", silentPart = "Head",
     wall = true,         -- only target visible players
     coinSpeed = 60,      -- studs/s for the Tween farm mode
+    shotCooldown = 0.6,  -- seconds between Auto Shoot attempts (uncalibrated: not measured against the real gun reload)
 }
 
 local COLORS = {
@@ -629,40 +630,56 @@ local function grabGun(manual)
     return ok
 end
 
--- Sheriff only: equips the gun, aims at the murderer and fires one shot.
-local shooting = false
-local function shootMurderer()
-    if shooting then return end
-    if roleOf(lp) ~= "Sheriff" then notify("You are not the Sheriff"); return end
-    local mchar
+local function findMurderer()
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= lp and roleOf(plr) == "Murderer" then mchar = plr.Character break end
+        if plr ~= lp and roleOf(plr) == "Murderer" then
+            local char = plr.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            if char and hum and hum.Health > 0 then return char end
+        end
     end
-    local mhum = mchar and mchar:FindFirstChildOfClass("Humanoid")
-    if not mchar or not mhum or mhum.Health <= 0 then notify("Murderer not found"); return end
-    if not installHooks() then notify("Shoot Murderer needs hookmetamethod (not available)"); return end
+    return nil
+end
+
+-- Sheriff only: equips the gun, aims at the murderer and fires one shot (the Silent Aim hooks
+-- are forced onto the murderer for the duration of the shot, whatever the Silent Aim toggle says).
+-- Returns true when a shot was started. auto = called by Auto Shoot, so no notifications.
+local shooting = false
+local function shootMurderer(auto)
+    if shooting then return false end
+    local function fail(msg)
+        if not auto then notify(msg) end
+        return false
+    end
+    if roleOf(lp) ~= "Sheriff" then return fail("You are not the Sheriff") end
+    local mchar = findMurderer()
+    if not mchar then return fail("Murderer not found") end
+    if not installHooks() then return fail("Shoot Murderer needs hookmetamethod (not available)") end
     local gun = equip("Gun")
-    if not gun then notify("Gun not found"); return end
+    if not gun then return fail("Gun not found") end
     shooting = true
     task.spawn(function()
         FORCE.role = "Murderer"
-        local t0, fired = os.clock(), false
-        while alive and os.clock() - t0 < 1.5 do
-            local cam = workspace.CurrentCamera
-            local part = mchar:FindFirstChild("UpperTorso") or mchar:FindFirstChild("Torso") or mchar:FindFirstChild("HumanoidRootPart")
-            if not cam or not part or not part.Parent then break end
-            cam.CFrame = CFrame.lookAt(cam.CFrame.Position, part.Position)
-            if SIL.lock and not fired then
-                fired = true
-                pcall(function() gun:Activate() end)
-                task.wait(0.35)
-                break
+        pcall(function()
+            local t0, fired = os.clock(), false
+            while alive and os.clock() - t0 < 1.5 do
+                local cam = workspace.CurrentCamera
+                local part = mchar:FindFirstChild("UpperTorso") or mchar:FindFirstChild("Torso") or mchar:FindFirstChild("HumanoidRootPart")
+                if not cam or not part or not part.Parent then break end
+                cam.CFrame = CFrame.lookAt(cam.CFrame.Position, part.Position)
+                if SIL.lock and not fired then
+                    fired = true
+                    gun:Activate()
+                    task.wait(0.35)
+                    break
+                end
+                task.wait(0.03)
             end
-            task.wait(0.03)
-        end
+        end)
         FORCE.role = nil
         shooting = false
     end)
+    return true
 end
 
 local function serverHop()
@@ -717,12 +734,21 @@ local UI = {
         } },
         { name = "Quick Actions", items = {
             { "button", "Grab Gun", function() task.spawn(grabGun, true) end },
-            { "button", "Shoot Murderer", shootMurderer },
+            { "button", "Shoot Murderer", function() shootMurderer(false) end },
             { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
             { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
         } },
     } },
     { tab = "Combat", icon = "crosshair", sections = {
+        { name = "Sheriff", items = {
+            { "toggle", "Auto Shoot Murderer", "autoShoot" },
+            { "toggle", "Auto Grab Gun", "gun" },
+            { "drop", "Grab Mode", "gunMode", { "Touch", "Teleport" } },
+        } },
+        { name = "Murderer", items = {
+            { "toggle", "Kill Aura", "aura" },
+            { "slider", "Kill Aura Range", "auraRange", 5, 80, 3 },
+        } },
         { name = "Aimbot", items = {
             { "toggle", "Aimbot", "aimbot" },
             { "slider", "Aim Speed", "aimSpeed", 1, 100, 5 },
@@ -739,11 +765,6 @@ local UI = {
             { "slider", "Silent Aim FOV", "silentFov", 20, 600, 10 },
             { "slider", "Hit Chance (%)", "silentHit", 1, 100, 5 },
             { "toggle", "Show FOV Circle", "silentShowFov" },
-        } },
-        { name = "Weapons", items = {
-            { "toggle", "Auto Shoot", "autoShoot" },
-            { "toggle", "Kill Aura", "aura" },
-            { "slider", "Kill Aura Range", "auraRange", 5, 80, 3 },
         } },
     } },
     { tab = "Visuals", icon = "eye", sections = {
@@ -768,10 +789,6 @@ local UI = {
             end },
             { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween" } },
             { "slider", "Farm Delay (ms)", "coinDelay", 40, 500, 10 },
-        } },
-        { name = "Gun", items = {
-            { "toggle", "Auto Grab Gun", "gun" },
-            { "drop", "Grab Mode", "gunMode", { "Touch", "Teleport" } },
         } },
     } },
     { tab = "Movement", icon = "user", sections = {
@@ -1351,21 +1368,22 @@ track(RunService.RenderStepped:Connect(function()
     end
 end))
 
--- combat: auto shoot, kill aura
+-- combat: auto shoot (sheriff), kill aura (murderer)
 local lastShot = 0
 loop(0.12, function()
     local char, hum, root = myParts()
     if not (char and hum and hum.Health > 0 and root) then return end
     local myRole = roleOf(lp)
 
-    if S.autoShoot and myRole == "Sheriff" and os.clock() - lastShot > 0.6 then
-        local ok, part = pcall(pickTarget, S.silentFov, CFG.maxDist, CFG.silentPart, true)
-        if ok and part then
-            local gun = equip("Gun")
-            if gun then
-                lastShot = os.clock()
-                pcall(function() gun:Activate() end)
-            end
+    -- Auto Shoot: as Sheriff, fire at the murderer whenever he is in range with a clear line of sight
+    if S.autoShoot and myRole == "Sheriff" and not shooting and os.clock() - lastShot > CFG.shotCooldown then
+        local cam = workspace.CurrentCamera
+        local mchar = cam and findMurderer()
+        local part = mchar and (mchar:FindFirstChild("UpperTorso") or mchar:FindFirstChild("Torso")
+            or mchar:FindFirstChild("HumanoidRootPart"))
+        if part and (part.Position - cam.CFrame.Position).Magnitude <= CFG.maxDist
+            and visible(cam, part, mchar) then
+            if shootMurderer(true) then lastShot = os.clock() end
         end
     end
 
