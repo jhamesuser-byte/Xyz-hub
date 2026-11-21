@@ -545,11 +545,65 @@ local function updateCoinEsp()
     end
 end
 
+-- Dropped gun lookup. The drop is not necessarily a direct child of the workspace (it can sit inside the
+-- map model), so it is found with one scan at start plus DescendantAdded, instead of a root-level lookup.
+local function insideCharacter(inst)
+    local p = inst.Parent
+    while p and p ~= workspace do
+        if p:IsA("Model") and Players:GetPlayerFromCharacter(p) then return true end
+        p = p.Parent
+    end
+    return false
+end
+
+local function isGunDrop(inst)
+    if inst.Name == "GunDrop" then return true end
+    return inst.Name == "Gun" and inst:IsA("Tool") and not insideCharacter(inst)   -- a gun Tool lying on the map
+end
+
+local gunDropCache
+for _, d in ipairs(workspace:GetDescendants()) do
+    if isGunDrop(d) then gunDropCache = d end
+end
+track(workspace.DescendantAdded:Connect(function(d)
+    if isGunDrop(d) then gunDropCache = d end
+end))
+
+local function findGunDrop()
+    if gunDropCache and gunDropCache.Parent and gunDropCache:IsDescendantOf(workspace) then return gunDropCache end
+    gunDropCache = nil
+    return nil
+end
+
+-- the part to touch / highlight for a drop (a Part, a Model, or a Tool with a Handle)
+local function gunDropPart(drop)
+    if not drop then return nil end
+    if drop:IsA("BasePart") then return drop end
+    return drop:FindFirstChildWhichIsA("BasePart", true)
+end
+
+-- names of gun-like objects on the map, shown when Grab Gun finds nothing (helps spotting a different name)
+local function gunCandidates()
+    local names, seen = {}, {}
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d.Name:lower():find("gun") and not insideCharacter(d) then
+            local label = d.Name .. " (" .. d.ClassName .. ")"
+            if not seen[label] then
+                seen[label] = true
+                names[#names + 1] = label
+                if #names >= 6 then break end
+            end
+        end
+    end
+    return names
+end
+
 -- Dropped gun ESP
 local gunHl
 local function updateGunEsp()
-    local drop = workspace:FindFirstChild("GunDrop")
-    if S.gunEsp and drop and drop:IsA("PVInstance") then
+    local drop = findGunDrop()
+    local target = drop and (drop:IsA("PVInstance") and drop or gunDropPart(drop))
+    if S.gunEsp and target then
         if not gunHl or not gunHl.Parent then
             gunHl = Instance.new("Highlight")
             gunHl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -558,7 +612,7 @@ local function updateGunEsp()
             gunHl.FillTransparency = 0.3
             gunHl.Parent = workspace.CurrentCamera or workspace
         end
-        gunHl.Adornee = drop
+        gunHl.Adornee = target
     elseif gunHl then
         pcall(function() gunHl:Destroy() end)
         gunHl = nil
@@ -641,7 +695,8 @@ local function updateStatus(murd, sher, myRoot)
     info("round", "Round: " .. ((murd or sher) and "active" or "waiting"))
     info("murd", "Murderer: " .. describe(murd, myRoot))
     info("sher", "Sheriff: " .. describe(sher, myRoot))
-    info("drop", "Gun drop: " .. (workspace:FindFirstChild("GunDrop") and "on the map" or "none"))
+    local drop = findGunDrop()
+    info("drop", "Gun drop: " .. (drop and ("on the map (" .. (drop.Parent and drop.Parent.Name or "?") .. ")") or "none"))
     info("coins", "Coins on map: " .. coinCount)
 
     info("role", "Role: " .. roleOf(lp))
@@ -754,10 +809,12 @@ local function grabGun(manual)
         if manual then notify("You already have a weapon") end
         return false
     end
-    local drop = workspace:FindFirstChild("GunDrop")
-    local part = drop and (drop:IsA("BasePart") and drop or drop:FindFirstChildWhichIsA("BasePart", true))
+    local part = gunDropPart(findGunDrop())
     if not part then
-        if manual then notify("No dropped gun on the map") end
+        if manual then
+            local c = gunCandidates()
+            notify(#c > 0 and ("No gun drop found. Similar objects: " .. table.concat(c, ", ")) or "No dropped gun on the map")
+        end
         return false
     end
     grabbing = true
