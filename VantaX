@@ -1,3 +1,5 @@
+local SLATE_URL = "https://raw.githubusercontent.com/PulseZax/Slate/refs/heads/main/.lua"
+
 local Players         = game:GetService("Players")
 local RunService      = game:GetService("RunService")
 local TweenService    = game:GetService("TweenService")
@@ -55,6 +57,21 @@ local function notify(msg)
     pcall(function()
         StarterGui:SetCore("SendNotification", { Title = "MM2 Hub", Text = tostring(msg), Duration = 4 })
     end)
+end
+
+-- HTTP com fallback (alguns executores nao tem game:HttpGet)
+local function httpGet(url)
+    local ok, res = pcall(function() return game:HttpGet(url) end)
+    if ok and type(res) == "string" and #res > 0 then return res end
+    local req = (syn and syn.request) or (http and http.request) or http_request or request or (fluxus and fluxus.request)
+    if req then
+        local ok2, r = pcall(req, { Url = url, Method = "GET" })
+        if ok2 and type(r) == "table" and type(r.Body) == "string" and #r.Body > 0
+            and (r.Success == true or r.StatusCode == 200) then
+            return r.Body
+        end
+    end
+    error("HttpGet falhou: " .. tostring(res))
 end
 
 -- ------------------------------------------------------------
@@ -471,7 +488,7 @@ local function applyLighting()
     if S.nofog then Lighting.FogEnd = 1e6 end
 end
 
-local info -- label do menu (criado abaixo)
+local setInfo -- definido pelo menu simples (o Slate mostra os papeis nas notificacoes)
 local lastMurd, lastSher
 
 local function refresh()
@@ -512,10 +529,10 @@ local function refresh()
     end
     lastMurd, lastSher = murd, sher
 
-    if info then
-        info.Text = "Assassino: " .. (murd and murd.DisplayName or "?")
+    if setInfo then
+        setInfo("Assassino: " .. (murd and murd.DisplayName or "?")
             .. "\nXerife: " .. (sher and sher.DisplayName or "?")
-            .. "\nSeu papel: " .. roleOf(lp)
+            .. "\nSeu papel: " .. roleOf(lp))
     end
     updateCoinEsp()
     updateGunEsp()
@@ -562,10 +579,8 @@ end
 
 local function serverHop()
     task.spawn(function()
-        local ok, body = pcall(function()
-            return game:HttpGet("https://games.roblox.com/v1/games/" .. game.PlaceId
-                .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true")
-        end)
+        local ok, body = pcall(httpGet, "https://games.roblox.com/v1/games/" .. game.PlaceId
+            .. "/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true")
         if not ok then
             notify("Falha ao listar servidores")
             return
@@ -600,7 +615,226 @@ local function rejoin()
 end
 
 -- ------------------------------------------------------------
--- Menu
+-- Especificacao do menu (usada pelo Slate E pelo menu simples)
+-- toggle : { "toggle", nome, chave, callback }
+-- drop   : { "drop",   nome, chave, opcoes, callback }
+-- slider : { "slider", nome, chave, min, max, passo, callback }
+-- button : { "button", nome, callback }
+-- ------------------------------------------------------------
+local UI = {
+    { tab = "Combate", icon = "crosshair", sections = {
+        { name = "Aimbot", items = {
+            { "toggle", "Aimbot", "aimbot" },
+            { "drop", "Modo", "aimMode", { "Legit", "Rage" } },
+            { "drop", "Parte", "aimPart", { "Cabeca", "Torso" } },
+            { "slider", "FOV", "aimFov", 20, 600, 10 },
+            { "slider", "Velocidade", "aimSpeed", 1, 100, 5 },
+            { "slider", "Predicao (ms)", "aimPredict", 0, 200, 10 },
+            { "toggle", "Checar parede", "aimWall" },
+            { "toggle", "So com item", "aimTool" },
+            { "toggle", "Circulo FOV", "aimShowFov" },
+        } },
+        { name = "Silent Aim", items = {
+            { "toggle", "Silent Aim", "silent", function(v)
+                if v and not ensureHooks() then
+                    S.silent = false
+                    notify("Silent Aim indisponivel: o executor nao tem hookmetamethod")
+                end
+            end },
+            { "drop", "Metodo", "silentMode", { "Raycast", "Mouse", "Remote", "Tudo" }, function()
+                if S.silent then ensureHooks() end
+            end },
+            { "drop", "Parte", "silentPart", { "Cabeca", "Torso" } },
+            { "slider", "FOV", "silentFov", 20, 600, 10 },
+            { "slider", "Chance de acerto %", "silentHit", 1, 100, 5 },
+            { "slider", "Predicao (ms)", "silentPredict", 0, 200, 10 },
+            { "toggle", "Checar parede", "silentWall" },
+            { "toggle", "So com item", "silentNeedTool" },
+            { "toggle", "Circulo FOV", "silentShowFov" },
+        } },
+        { name = "Alvo", items = {
+            { "drop", "Alvo", "alvo", { "Auto", "Assassino", "Xerife", "Todos" } },
+            { "drop", "Prioridade", "prio", { "Centro", "Mais perto" } },
+            { "slider", "Distancia max", "maxDist", 50, 1500, 50 },
+        } },
+        { name = "Armas", items = {
+            { "toggle", "Auto tiro (Xerife)", "autoShoot" },
+            { "toggle", "Auto equipar", "autoEquip" },
+            { "toggle", "Kill Aura (Assassino)", "aura" },
+            { "slider", "Alcance da aura", "auraRange", 5, 80, 3 },
+            { "toggle", "Aura com TP", "auraTp" },
+        } },
+    } },
+    { tab = "Visual", icon = "eye", sections = {
+        { name = "ESP", items = {
+            { "toggle", "ESP papeis", "esp", function(v)
+                if not v then clearAll() end
+            end },
+            { "toggle", "Etiquetas", "labels" },
+            { "toggle", "Distancia", "dist" },
+            { "toggle", "ESP moedas", "coinEsp" },
+            { "toggle", "ESP arma caida", "gunEsp" },
+            { "toggle", "Notificar papeis", "notify" },
+        } },
+        { name = "Mundo", items = {
+            { "toggle", "Fullbright", "fullbright", function() applyLighting() end },
+            { "toggle", "Sem neblina", "nofog", function() applyLighting() end },
+            { "toggle", "FOV da camera", "fovOn" },
+            { "slider", "Valor do FOV", "fov", 30, 120, 5 },
+        } },
+    } },
+    { tab = "Mover", icon = "user", sections = {
+        { name = "Movimento", items = {
+            { "toggle", "Speed", "speed", function(v)
+                if not v then
+                    local _, hum = myParts()
+                    if hum then hum.WalkSpeed = 16 end
+                end
+            end },
+            { "slider", "Velocidade", "speedVal", 16, 120, 4 },
+            { "toggle", "Jump", "jump", function(v)
+                if not v then
+                    local _, hum = myParts()
+                    if hum then hum.JumpPower = 50 end
+                end
+            end },
+            { "slider", "Forca do pulo", "jumpVal", 50, 200, 10 },
+            { "toggle", "Pulo infinito", "infjump" },
+            { "toggle", "Noclip", "noclip" },
+            { "toggle", "Fly", "fly" },
+            { "slider", "Velocidade do fly", "flySpeed", 20, 150, 10 },
+        } },
+        { name = "Teleporte", items = {
+            { "button", "TP -> Xerife", function() tpToRole("Xerife") end },
+            { "button", "TP -> Assassino", function() tpToRole("Assassino") end },
+        } },
+    } },
+    { tab = "Farm", icon = "target", sections = {
+        { name = "Moedas e arma", items = {
+            { "toggle", "Auto-moedas", "coins", function(v)
+                if not v and curTween then curTween:Cancel() end
+            end },
+            { "slider", "Velocidade das moedas", "coinSpeed", 15, 60, 3 },
+            { "toggle", "Pegar arma caida", "gun" },
+        } },
+    } },
+    { tab = "Extra", icon = "wrench", sections = {
+        { name = "Extra", items = {
+            { "toggle", "Anti-AFK", "antiafk" },
+            { "button", "Rejoin", rejoin },
+            { "button", "Server Hop", serverHop },
+            { "button", "Descarregar script", function()
+                if env.__MM2_CLEANUP then env.__MM2_CLEANUP() end
+            end },
+        } },
+    } },
+}
+
+-- ------------------------------------------------------------
+-- Renderer 1: SLATE (abas selecionaveis)
+-- ------------------------------------------------------------
+local THEME = {
+    Background = Color3.fromRGB(18, 12, 26), Surface = Color3.fromRGB(23, 16, 33),
+    SurfaceAlt = Color3.fromRGB(30, 20, 43), Elevated = Color3.fromRGB(36, 24, 52),
+    Border = Color3.fromRGB(100, 60, 160), Line = Color3.fromRGB(60, 38, 88),
+    Text = Color3.fromRGB(240, 232, 250), Muted = Color3.fromRGB(160, 132, 190),
+    Faint = Color3.fromRGB(110, 88, 140), Accent = Color3.fromRGB(168, 100, 255),
+    OnAccent = Color3.fromRGB(18, 10, 30), Success = Color3.fromRGB(120, 220, 160),
+    Warning = Color3.fromRGB(240, 190, 90), Danger = Color3.fromRGB(245, 90, 120),
+    ToggleOn = Color3.fromRGB(168, 100, 255), ToggleKnob = Color3.fromRGB(250, 246, 255),
+    Info = Color3.fromRGB(130, 170, 255),
+}
+
+local function buildSlate()
+    local okH, src = pcall(httpGet, SLATE_URL)
+    if not okH then return nil, "download do Slate: " .. tostring(src) end
+    local fn, err = loadstring(src, "@Slate")
+    if not fn then return nil, "compilar o Slate: " .. tostring(err) end
+    local okL, Slate = pcall(fn)
+    if not okL or not Slate then return nil, "carregar o Slate: " .. tostring(Slate) end
+
+    pcall(function() Slate:PreloadIcons({ "lucide" }) end)
+    pcall(function() if Slate.Theme and Slate.Theme.Set then Slate.Theme:Set(THEME) end end)
+    pcall(function() Slate.Theme.Preset("Violet") end)
+    pcall(function() Slate:SetFontFamily("JosefinSans") end)
+
+    local okW, win = pcall(function()
+        return Slate:CreateWindow({
+            Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
+            Size = UDim2.fromOffset(420, 300), MinSize = Vector2.new(420, 300),
+            ToggleKey = Enum.KeyCode.RightShift,
+        })
+    end)
+    if not okW or not win then return nil, "criar a janela: " .. tostring(win) end
+    pcall(function() win:SetBackdrop("aurora") end)
+
+    local created = 0
+    for _, t in ipairs(UI) do
+        local okT, tab = pcall(function() return win:CreateTab({ Name = t.tab, Icon = t.icon }) end)
+        if okT and tab then
+            pcall(function() tab:SetColumns(2) end)
+            for _, sec in ipairs(t.sections) do
+                local okS, section = pcall(function() return tab:CreateSection({ Name = sec.name }) end)
+                if okS and section then
+                    for _, it in ipairs(sec.items) do
+                        local kind = it[1]
+                        local okI = pcall(function()
+                            if kind == "toggle" then
+                                local key, cb = it[3], it[4]
+                                section:Toggle({
+                                    Name = it[2], Default = S[key],
+                                    Callback = function(v)
+                                        S[key] = (v == true)
+                                        if cb then pcall(cb, S[key]) end
+                                    end,
+                                })
+                            elseif kind == "slider" then
+                                local key, cb = it[3], it[7]
+                                section:Slider({
+                                    Name = it[2], Min = it[4], Max = it[5], Default = S[key],
+                                    Callback = function(v)
+                                        S[key] = math.floor((tonumber(v) or S[key]) + 0.5)
+                                        if cb then pcall(cb, S[key]) end
+                                    end,
+                                })
+                            elseif kind == "drop" then
+                                local key, cb = it[3], it[5]
+                                section:Dropdown({
+                                    Name = it[2], Options = it[4], Default = S[key],
+                                    Callback = function(v)
+                                        S[key] = v
+                                        if cb then pcall(cb, v) end
+                                    end,
+                                })
+                            elseif kind == "button" then
+                                local cb = it[3]
+                                section:Button({ Name = it[2], Callback = function() pcall(cb) end })
+                            end
+                        end)
+                        if okI then created = created + 1 end
+                    end
+                end
+            end
+        end
+    end
+    if created == 0 then
+        pcall(function() win:Destroy() end)
+        return nil, "o Slate nao criou nenhum controle"
+    end
+
+    local shown = true
+    pcall(function() win:SetVisible(true) end)
+    return {
+        toggle = function()
+            shown = not shown
+            pcall(function() win:SetVisible(shown) end)
+        end,
+        destroy = function() pcall(function() win:Destroy() end) end,
+    }
+end
+
+-- ------------------------------------------------------------
+-- Renderer 2: MENU SIMPLES (reserva, sem dependencias)
 -- ------------------------------------------------------------
 local function mount(gui)
     local function try(getParent)
@@ -618,12 +852,258 @@ local function mount(gui)
     return false
 end
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "MM2_Hub"
-gui.ResetOnSpawn = false
-gui.IgnoreGuiInset = true
-gui.DisplayOrder = 2147483000
+local PURPLE = Color3.fromRGB(110, 60, 190)
+local DARK = Color3.fromRGB(36, 24, 52)
 
+local function roundify(inst, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 8)
+    c.Parent = inst
+end
+
+local function buildFallback()
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "MM2_Hub"
+    gui.ResetOnSpawn = false
+    gui.IgnoreGuiInset = true
+    gui.DisplayOrder = 2147483000
+
+    local win = Instance.new("Frame")
+    win.Size = UDim2.fromOffset(250, 300)
+    win.Position = UDim2.fromOffset(58, 30)
+    win.BackgroundColor3 = Color3.fromRGB(23, 16, 33)
+    win.BorderSizePixel = 0
+    win.Active = true
+    pcall(function() win.Draggable = true end)
+    roundify(win, 10)
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, 6)
+    pad.PaddingBottom = UDim.new(0, 6)
+    pad.PaddingLeft = UDim.new(0, 6)
+    pad.PaddingRight = UDim.new(0, 6)
+    pad.Parent = win
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 20)
+    title.BackgroundTransparency = 1
+    title.Text = "MURDER MYSTERY 2"
+    title.TextColor3 = Color3.fromRGB(190, 140, 255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 14
+    title.Parent = win
+
+    local tabBar = Instance.new("Frame")
+    tabBar.Size = UDim2.new(1, 0, 0, 26)
+    tabBar.Position = UDim2.fromOffset(0, 22)
+    tabBar.BackgroundTransparency = 1
+    tabBar.Parent = win
+
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(1, 0, 1, -54)
+    holder.Position = UDim2.fromOffset(0, 52)
+    holder.BackgroundTransparency = 1
+    holder.Parent = win
+
+    local pages, tabBtns = {}, {}
+    local function showPage(name)
+        for n, p in pairs(pages) do p.frame.Visible = (n == name) end
+        for n, b in pairs(tabBtns) do b.BackgroundColor3 = (n == name) and PURPLE or DARK end
+    end
+
+    local count = #UI
+    for i, t in ipairs(UI) do
+        local sf = Instance.new("ScrollingFrame")
+        sf.Size = UDim2.fromScale(1, 1)
+        sf.BackgroundTransparency = 1
+        sf.BorderSizePixel = 0
+        sf.ScrollBarThickness = 4
+        sf.CanvasSize = UDim2.new()
+        sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
+        sf.Visible = false
+        local l = Instance.new("UIListLayout")
+        l.SortOrder = Enum.SortOrder.LayoutOrder
+        l.Padding = UDim.new(0, 4)
+        l.Parent = sf
+        local pd = Instance.new("UIPadding")
+        pd.PaddingRight = UDim.new(0, 6)
+        pd.Parent = sf
+        sf.Parent = holder
+        pages[t.tab] = { frame = sf, n = 1 }
+
+        local tb = Instance.new("TextButton")
+        tb.Size = UDim2.new(1 / count, -3, 1, 0)
+        tb.Position = UDim2.new((i - 1) / count, 0, 0, 0)
+        tb.Text = t.tab
+        tb.TextColor3 = Color3.new(1, 1, 1)
+        tb.Font = Enum.Font.GothamBold
+        tb.TextSize = 10
+        tb.BackgroundColor3 = DARK
+        roundify(tb, 6)
+        tb.Activated:Connect(function() showPage(t.tab) end)
+        tb.Parent = tabBar
+        tabBtns[t.tab] = tb
+    end
+
+    local function slot(p)
+        p.n = p.n + 1
+        return p.n
+    end
+
+    local function addLabel(p, text)
+        local l = Instance.new("TextLabel")
+        l.Size = UDim2.new(1, 0, 0, 20)
+        l.BackgroundTransparency = 1
+        l.Text = text
+        l.TextColor3 = Color3.fromRGB(190, 140, 255)
+        l.Font = Enum.Font.GothamBold
+        l.TextSize = 12
+        l.TextXAlignment = Enum.TextXAlignment.Left
+        l.LayoutOrder = slot(p)
+        l.Parent = p.frame
+    end
+
+    local function addToggle(p, label, key, onChange)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, 0, 0, 30)
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 13
+        b.AutoButtonColor = true
+        b.LayoutOrder = slot(p)
+        roundify(b)
+        local function paint()
+            b.Text = label .. ": " .. (S[key] and "ON" or "OFF")
+            b.BackgroundColor3 = S[key] and PURPLE or DARK
+        end
+        paint()
+        b.Activated:Connect(function()
+            S[key] = not S[key]
+            if onChange then pcall(onChange, S[key]) end
+            paint()
+        end)
+        b.Parent = p.frame
+    end
+
+    local function addButton(p, label, cb)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, 0, 0, 30)
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 13
+        b.BackgroundColor3 = DARK
+        b.Text = label
+        b.LayoutOrder = slot(p)
+        roundify(b)
+        b.Activated:Connect(function() pcall(cb) end)
+        b.Parent = p.frame
+    end
+
+    local function addCycle(p, label, key, options, onChange)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, 0, 0, 30)
+        b.TextColor3 = Color3.new(1, 1, 1)
+        b.Font = Enum.Font.GothamBold
+        b.TextSize = 13
+        b.BackgroundColor3 = DARK
+        b.LayoutOrder = slot(p)
+        roundify(b)
+        local function paint() b.Text = label .. ": " .. tostring(S[key]) end
+        paint()
+        b.Activated:Connect(function()
+            local idx = 1
+            for i, o in ipairs(options) do
+                if o == S[key] then idx = i end
+            end
+            S[key] = options[(idx % #options) + 1]
+            if onChange then pcall(onChange, S[key]) end
+            paint()
+        end)
+        b.Parent = p.frame
+    end
+
+    local function addStepper(p, label, key, mn, mx, step, onChange)
+        local row = Instance.new("Frame")
+        row.Size = UDim2.new(1, 0, 0, 30)
+        row.BackgroundColor3 = DARK
+        row.BorderSizePixel = 0
+        row.LayoutOrder = slot(p)
+        roundify(row)
+        local lb = Instance.new("TextLabel")
+        lb.Size = UDim2.new(1, -70, 1, 0)
+        lb.Position = UDim2.fromOffset(8, 0)
+        lb.BackgroundTransparency = 1
+        lb.TextColor3 = Color3.new(1, 1, 1)
+        lb.Font = Enum.Font.GothamBold
+        lb.TextSize = 12
+        lb.TextXAlignment = Enum.TextXAlignment.Left
+        lb.Parent = row
+        local function paint() lb.Text = label .. ": " .. tostring(S[key]) end
+        paint()
+        local function bump(dir)
+            S[key] = math.clamp(S[key] + dir * step, mn, mx)
+            paint()
+            if onChange then pcall(onChange, S[key]) end
+        end
+        local function mk(text, x, dir)
+            local b = Instance.new("TextButton")
+            b.Size = UDim2.fromOffset(28, 24)
+            b.Position = UDim2.new(1, x, 0.5, -12)
+            b.BackgroundColor3 = PURPLE
+            b.TextColor3 = Color3.new(1, 1, 1)
+            b.Font = Enum.Font.GothamBold
+            b.TextSize = 16
+            b.Text = text
+            roundify(b, 6)
+            b.Activated:Connect(function() bump(dir) end)
+            b.Parent = row
+        end
+        mk("-", -62, -1)
+        mk("+", -32, 1)
+    end
+
+    -- papeis (texto que o refresh() atualiza)
+    local info = Instance.new("TextLabel")
+    info.Size = UDim2.new(1, 0, 0, 48)
+    info.BackgroundTransparency = 1
+    info.Text = "Assassino: ?\nXerife: ?\nSeu papel: ?"
+    info.TextColor3 = Color3.new(1, 1, 1)
+    info.Font = Enum.Font.Gotham
+    info.TextSize = 12
+    info.TextXAlignment = Enum.TextXAlignment.Left
+    info.TextYAlignment = Enum.TextYAlignment.Top
+    info.LayoutOrder = 0
+    info.Parent = pages[UI[1].tab].frame
+    setInfo = function(text) info.Text = text end
+
+    for _, t in ipairs(UI) do
+        local p = pages[t.tab]
+        for _, sec in ipairs(t.sections) do
+            addLabel(p, sec.name)
+            for _, it in ipairs(sec.items) do
+                local kind = it[1]
+                if kind == "toggle" then addToggle(p, it[2], it[3], it[4])
+                elseif kind == "drop" then addCycle(p, it[2], it[3], it[4], it[5])
+                elseif kind == "slider" then addStepper(p, it[2], it[3], it[4], it[5], it[6] or 1, it[7])
+                elseif kind == "button" then addButton(p, it[2], it[3]) end
+            end
+        end
+    end
+
+    showPage(UI[1].tab)
+    mount(gui)
+    win.Parent = gui
+    return {
+        toggle = function() win.Visible = not win.Visible end,
+        destroy = function()
+            setInfo = nil
+            pcall(function() gui:Destroy() end)
+        end,
+    }
+end
+
+-- ------------------------------------------------------------
+-- Circulos de FOV (independentes do menu)
+-- ------------------------------------------------------------
 local fovGui = Instance.new("ScreenGui")
 fovGui.Name = "MM2_Fov"
 fovGui.ResetOnSpawn = false
@@ -649,353 +1129,40 @@ local function makeCircle(color)
 end
 local circAim = makeCircle(Color3.fromRGB(255, 255, 255))
 local circSil = makeCircle(Color3.fromRGB(190, 120, 255))
-
-local PURPLE = Color3.fromRGB(110, 60, 190)
-local DARK = Color3.fromRGB(36, 24, 52)
-
-local win = Instance.new("Frame")
-win.Size = UDim2.fromOffset(250, 300)
-win.Position = UDim2.fromOffset(58, 30)
-win.BackgroundColor3 = Color3.fromRGB(23, 16, 33)
-win.BorderSizePixel = 0
-win.Active = true
-pcall(function() win.Draggable = true end)
-do
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 10)
-    c.Parent = win
-    local p = Instance.new("UIPadding")
-    p.PaddingTop = UDim.new(0, 6)
-    p.PaddingBottom = UDim.new(0, 6)
-    p.PaddingLeft = UDim.new(0, 6)
-    p.PaddingRight = UDim.new(0, 6)
-    p.Parent = win
-end
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 20)
-title.BackgroundTransparency = 1
-title.Text = "MURDER MYSTERY 2"
-title.TextColor3 = Color3.fromRGB(190, 140, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 14
-title.Parent = win
-
-local tabBar = Instance.new("Frame")
-tabBar.Size = UDim2.new(1, 0, 0, 26)
-tabBar.Position = UDim2.fromOffset(0, 22)
-tabBar.BackgroundTransparency = 1
-tabBar.Parent = win
-
-local holder = Instance.new("Frame")
-holder.Size = UDim2.new(1, 0, 1, -54)
-holder.Position = UDim2.fromOffset(0, 52)
-holder.BackgroundTransparency = 1
-holder.Parent = win
-
-local pages, tabBtns = {}, {}
-local function showPage(name)
-    for n, p in pairs(pages) do p.frame.Visible = (n == name) end
-    for n, b in pairs(tabBtns) do b.BackgroundColor3 = (n == name) and PURPLE or DARK end
-end
-
-local TAB_NAMES = { "Combate", "Visual", "Mover", "Farm", "Extra" }
-for i, name in ipairs(TAB_NAMES) do
-    local sf = Instance.new("ScrollingFrame")
-    sf.Size = UDim2.fromScale(1, 1)
-    sf.BackgroundTransparency = 1
-    sf.BorderSizePixel = 0
-    sf.ScrollBarThickness = 4
-    sf.CanvasSize = UDim2.new()
-    sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
-    sf.Visible = false
-    local l = Instance.new("UIListLayout")
-    l.SortOrder = Enum.SortOrder.LayoutOrder
-    l.Padding = UDim.new(0, 4)
-    l.Parent = sf
-    local pd = Instance.new("UIPadding")
-    pd.PaddingRight = UDim.new(0, 6)
-    pd.Parent = sf
-    sf.Parent = holder
-    pages[name] = { frame = sf, n = 0 }
-
-    local tb = Instance.new("TextButton")
-    tb.Size = UDim2.new(0.2, -3, 1, 0)
-    tb.Position = UDim2.new((i - 1) * 0.2, 0, 0, 0)
-    tb.Text = name
-    tb.TextColor3 = Color3.new(1, 1, 1)
-    tb.Font = Enum.Font.GothamBold
-    tb.TextSize = 10
-    tb.BackgroundColor3 = DARK
-    local tc = Instance.new("UICorner")
-    tc.CornerRadius = UDim.new(0, 6)
-    tc.Parent = tb
-    tb.Activated:Connect(function() showPage(name) end)
-    tb.Parent = tabBar
-    tabBtns[name] = tb
-end
-
-local function slot(p)
-    p.n = p.n + 1
-    return p.n
-end
-
-local function roundify(inst, r)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, r or 8)
-    c.Parent = inst
-end
-
-local function addLabel(p, text)
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(1, 0, 0, 20)
-    l.BackgroundTransparency = 1
-    l.Text = text
-    l.TextColor3 = Color3.fromRGB(190, 140, 255)
-    l.Font = Enum.Font.GothamBold
-    l.TextSize = 12
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.LayoutOrder = slot(p)
-    l.Parent = p.frame
-end
-
-local function addToggle(p, label, key, onChange)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, 0, 0, 30)
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 13
-    b.AutoButtonColor = true
-    b.LayoutOrder = slot(p)
-    roundify(b)
-    local function paint()
-        b.Text = label .. ": " .. (S[key] and "ON" or "OFF")
-        b.BackgroundColor3 = S[key] and PURPLE or DARK
-    end
-    paint()
-    b.Activated:Connect(function()
-        S[key] = not S[key]
-        if onChange then pcall(onChange, S[key]) end
-        paint()
-    end)
-    b.Parent = p.frame
-end
-
-local function addButton(p, label, cb)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, 0, 0, 30)
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 13
-    b.BackgroundColor3 = DARK
-    b.Text = label
-    b.LayoutOrder = slot(p)
-    roundify(b)
-    b.Activated:Connect(function() pcall(cb) end)
-    b.Parent = p.frame
-end
-
-local function addCycle(p, label, key, options, onChange)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, 0, 0, 30)
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 13
-    b.BackgroundColor3 = DARK
-    b.LayoutOrder = slot(p)
-    roundify(b)
-    local function paint() b.Text = label .. ": " .. tostring(S[key]) end
-    paint()
-    b.Activated:Connect(function()
-        local idx = 1
-        for i, o in ipairs(options) do
-            if o == S[key] then idx = i end
-        end
-        S[key] = options[(idx % #options) + 1]
-        if onChange then pcall(onChange, S[key]) end
-        paint()
-    end)
-    b.Parent = p.frame
-end
-
-local function addStepper(p, label, key, mn, mx, step, onChange)
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1, 0, 0, 30)
-    row.BackgroundColor3 = DARK
-    row.BorderSizePixel = 0
-    row.LayoutOrder = slot(p)
-    roundify(row)
-    local lb = Instance.new("TextLabel")
-    lb.Size = UDim2.new(1, -70, 1, 0)
-    lb.Position = UDim2.fromOffset(8, 0)
-    lb.BackgroundTransparency = 1
-    lb.TextColor3 = Color3.new(1, 1, 1)
-    lb.Font = Enum.Font.GothamBold
-    lb.TextSize = 12
-    lb.TextXAlignment = Enum.TextXAlignment.Left
-    lb.Parent = row
-    local function paint() lb.Text = label .. ": " .. tostring(S[key]) end
-    paint()
-    local function bump(dir)
-        S[key] = math.clamp(S[key] + dir * step, mn, mx)
-        paint()
-        if onChange then pcall(onChange, S[key]) end
-    end
-    local function mk(text, x, dir)
-        local b = Instance.new("TextButton")
-        b.Size = UDim2.fromOffset(28, 24)
-        b.Position = UDim2.new(1, x, 0.5, -12)
-        b.BackgroundColor3 = PURPLE
-        b.TextColor3 = Color3.new(1, 1, 1)
-        b.Font = Enum.Font.GothamBold
-        b.TextSize = 16
-        b.Text = text
-        roundify(b, 6)
-        b.Activated:Connect(function() bump(dir) end)
-        b.Parent = row
-    end
-    mk("-", -62, -1)
-    mk("+", -32, 1)
-end
-
-info = Instance.new("TextLabel")
-info.Size = UDim2.new(1, 0, 0, 48)
-info.BackgroundTransparency = 1
-info.Text = "Assassino: ?\nXerife: ?\nSeu papel: ?"
-info.TextColor3 = Color3.new(1, 1, 1)
-info.Font = Enum.Font.Gotham
-info.TextSize = 12
-info.TextXAlignment = Enum.TextXAlignment.Left
-info.TextYAlignment = Enum.TextYAlignment.Top
-info.LayoutOrder = 0
-info.Parent = pages.Combate.frame
-
--- ===== Combate =====
-do
-    local p = pages.Combate
-    p.n = 1
-    addLabel(p, "AIMBOT")
-    addToggle(p, "Aimbot", "aimbot")
-    addCycle(p, "Modo", "aimMode", { "Legit", "Rage" })
-    addCycle(p, "Parte", "aimPart", { "Cabeca", "Torso" })
-    addStepper(p, "FOV", "aimFov", 20, 600, 10)
-    addStepper(p, "Velocidade", "aimSpeed", 1, 100, 5)
-    addStepper(p, "Predicao ms", "aimPredict", 0, 200, 10)
-    addToggle(p, "Checar parede", "aimWall")
-    addToggle(p, "So com item", "aimTool")
-    addToggle(p, "Circulo FOV", "aimShowFov")
-
-    addLabel(p, "SILENT AIM")
-    addToggle(p, "Silent Aim", "silent", function(v)
-        if v and not ensureHooks() then
-            S.silent = false
-            notify("Silent Aim indisponivel: o executor nao tem hookmetamethod")
-        end
-    end)
-    addCycle(p, "Metodo", "silentMode", { "Raycast", "Mouse", "Remote", "Tudo" }, function()
-        if S.silent then ensureHooks() end
-    end)
-    addCycle(p, "Parte", "silentPart", { "Cabeca", "Torso" })
-    addStepper(p, "FOV", "silentFov", 20, 600, 10)
-    addStepper(p, "Chance %", "silentHit", 1, 100, 5)
-    addStepper(p, "Predicao ms", "silentPredict", 0, 200, 10)
-    addToggle(p, "Checar parede", "silentWall")
-    addToggle(p, "So com item", "silentNeedTool")
-    addToggle(p, "Circulo FOV", "silentShowFov")
-
-    addLabel(p, "ALVO")
-    addCycle(p, "Alvo", "alvo", { "Auto", "Assassino", "Xerife", "Todos" })
-    addCycle(p, "Prioridade", "prio", { "Centro", "Mais perto" })
-    addStepper(p, "Dist. max", "maxDist", 50, 1500, 50)
-
-    addLabel(p, "ARMAS")
-    addToggle(p, "Auto tiro (Xerife)", "autoShoot")
-    addToggle(p, "Auto equipar", "autoEquip")
-    addToggle(p, "Kill Aura (Assassino)", "aura")
-    addStepper(p, "Alcance aura", "auraRange", 5, 80, 3)
-    addToggle(p, "Aura TP", "auraTp")
-end
-
--- ===== Visual =====
-do
-    local p = pages.Visual
-    addToggle(p, "ESP papeis", "esp", function(v)
-        if not v then clearAll() end
-    end)
-    addToggle(p, "Etiquetas", "labels")
-    addToggle(p, "Distancia", "dist")
-    addToggle(p, "ESP moedas", "coinEsp")
-    addToggle(p, "ESP arma caida", "gunEsp")
-    addToggle(p, "Fullbright", "fullbright", applyLighting)
-    addToggle(p, "Sem neblina", "nofog", applyLighting)
-    addToggle(p, "FOV da camera", "fovOn")
-    addStepper(p, "Valor FOV", "fov", 30, 120, 5)
-    addToggle(p, "Notificar papeis", "notify")
-end
-
--- ===== Mover =====
-do
-    local p = pages.Mover
-    addToggle(p, "Speed", "speed", function(v)
-        if not v then
-            local _, hum = myParts()
-            if hum then hum.WalkSpeed = 16 end
-        end
-    end)
-    addStepper(p, "Velocidade", "speedVal", 16, 120, 4)
-    addToggle(p, "Jump", "jump", function(v)
-        if not v then
-            local _, hum = myParts()
-            if hum then hum.JumpPower = 50 end
-        end
-    end)
-    addStepper(p, "Forca pulo", "jumpVal", 50, 200, 10)
-    addToggle(p, "Pulo infinito", "infjump")
-    addToggle(p, "Noclip", "noclip")
-    addToggle(p, "Fly", "fly")
-    addStepper(p, "Vel. fly", "flySpeed", 20, 150, 10)
-    addButton(p, "TP -> Xerife", function() tpToRole("Xerife") end)
-    addButton(p, "TP -> Assassino", function() tpToRole("Assassino") end)
-end
-
--- ===== Farm =====
-do
-    local p = pages.Farm
-    addToggle(p, "Auto-moedas", "coins", function(v)
-        if not v and curTween then curTween:Cancel() end
-    end)
-    addStepper(p, "Vel. moedas", "coinSpeed", 15, 60, 3)
-    addToggle(p, "Pegar arma caida", "gun")
-end
-
--- ===== Extra =====
-do
-    local p = pages.Extra
-    addToggle(p, "Anti-AFK", "antiafk")
-    addButton(p, "Rejoin", rejoin)
-    addButton(p, "Server Hop", serverHop)
-    addButton(p, "Descarregar script", function()
-        if env.__MM2_CLEANUP then env.__MM2_CLEANUP() end
-    end)
-end
-
-showPage("Combate")
-
-local dock = Instance.new("TextButton")
-dock.Size = UDim2.fromOffset(44, 44)
-dock.Position = UDim2.new(0, 6, 0.5, -22)
-dock.BackgroundColor3 = PURPLE
-dock.TextColor3 = Color3.new(1, 1, 1)
-dock.Font = Enum.Font.GothamBold
-dock.TextSize = 13
-dock.Text = "MM2"
-roundify(dock)
-dock.Activated:Connect(function() win.Visible = not win.Visible end)
-
-mount(gui)
 mount(fovGui)
-win.Parent = gui
-dock.Parent = gui
+
+-- ------------------------------------------------------------
+-- Abre o menu: Slate; se falhar, menu simples
+-- ------------------------------------------------------------
+local ui
+local slateUi, slateErr = buildSlate()
+if slateUi then
+    ui = slateUi
+else
+    notify("Slate indisponivel (" .. tostring(slateErr):sub(1, 90) .. "). Usando menu simples.")
+    ui = buildFallback()
+end
+
+-- botao fixo "MM2" (abre/fecha o menu por toque)
+local dockGui = Instance.new("ScreenGui")
+dockGui.Name = "MM2_Dock"
+dockGui.ResetOnSpawn = false
+dockGui.IgnoreGuiInset = true
+dockGui.DisplayOrder = 2147482998
+do
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.fromOffset(44, 44)
+    b.Position = UDim2.new(0, 6, 0.5, -22)
+    b.BackgroundColor3 = PURPLE
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 13
+    b.Text = "MM2"
+    roundify(b)
+    b.Activated:Connect(function() pcall(ui.toggle) end)
+    b.Parent = dockGui
+end
+mount(dockGui)
 
 -- ------------------------------------------------------------
 -- Loops
@@ -1260,9 +1427,10 @@ env.__MM2_CLEANUP = function()
             hum.JumpPower = 50
         end)
     end
-    pcall(function() gui:Destroy() end)
+    pcall(ui.destroy)
     pcall(function() fovGui:Destroy() end)
+    pcall(function() dockGui:Destroy() end)
     env.__MM2_CLEANUP = nil
 end
 
-notify("MM2 Hub carregado. Toque no botao MM2.")
+notify("MM2 Hub carregado (" .. (slateUi and "Slate" or "menu simples") .. ").")
