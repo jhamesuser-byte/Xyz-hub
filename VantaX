@@ -43,7 +43,7 @@ local S = {
     -- fling
     loopMurd = false, loopSher = false, flingPick = "",
     -- misc
-    antiafk = true, quickButton = false,
+    antiafk = true, quickButton = false, menuScale = 100,
     -- animations
     runAnim = "Off",
 }
@@ -1926,6 +1926,8 @@ end))
 -- label  : { "label", text }
 -- toggle : { "toggle", name, key, callback }
 -- drop   : { "drop",   name, key, options, callback }
+local MENU_WINDOW
+
 -- slider : { "slider", name, key, min, max, step, callback }
 -- button : { "button", name, callback }
 -- ------------------------------------------------------------
@@ -2092,6 +2094,11 @@ local UI = {
     } },
     { tab = "Misc", icon = "wrench", sections = {
         { name = "Utilities", items = {
+            { "slider", "Menu Size (%)", "menuScale", 50, 200, 5, function(v)
+                local w, h = math.floor(540 * v / 100), math.floor(360 * v / 100)
+                pcall(function() if MENU_WINDOW then MENU_WINDOW.Size = UDim2.fromOffset(w, h) end end)
+                pcall(function() if MENU_WINDOW then MENU_WINDOW.MinSize = Vector2.new(math.floor(480 * v / 100), math.floor(320 * v / 100)) end end)
+            end },
             { "toggle", "Anti-AFK", "antiafk" },
             { "button", "Rejoin", rejoin },
             { "button", "Server Hop", serverHop },
@@ -2281,11 +2288,12 @@ local function buildSlate()
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
-            Size = UDim2.fromOffset(500, 335), MinSize = Vector2.new(440, 295),
+            Size = UDim2.fromOffset(540, 360), MinSize = Vector2.new(480, 320),
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
     if not okW or not win then return nil, "creating the window: " .. tostring(win) end
+    MENU_WINDOW = win
     pcall(function() win:SetBackdrop("aurora") end)
 
     local created = 0
