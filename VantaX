@@ -1,5 +1,3 @@
--- ============================================================
-
 local SLATE_URL = "https://raw.githubusercontent.com/PulseZax/Slate/refs/heads/main/.lua"
 
 local Players         = game:GetService("Players")
@@ -38,7 +36,7 @@ local S = {
     -- weapons
     autoShoot = false, aura = false, auraRange = 14,
     -- farm
-    coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60,
+    coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60, coinNoclip = true,
     gun = false, gunMode = "Touch",
     -- movement
     speed = false, speedVal = 30, jump = false, jumpVal = 80,
@@ -781,16 +779,6 @@ local UI = {
             { "toggle", "Fullbright", "fullbright", function() applyLighting() end },
         } },
     } },
-    { tab = "Farm", icon = "coins", sections = {
-        { name = "Coins", items = {
-            { "toggle", "Auto Farm Coins", "coins", function(v)
-                if not v and curTween then curTween:Cancel() end
-            end },
-            { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween" } },
-            { "slider", "Tween Speed (studs/s)", "coinSpeed", 20, 200, 10 },
-            { "slider", "Farm Delay (ms)", "coinDelay", 40, 500, 10 },
-        } },
-    } },
     { tab = "Movement", icon = "user", sections = {
         { name = "Speed & Jump", items = {
             { "toggle", "WalkSpeed", "speed", function(v)
@@ -815,6 +803,23 @@ local UI = {
         { name = "Other", items = {
             { "toggle", "Infinite Jump", "infjump" },
             { "toggle", "Noclip", "noclip" },
+        } },
+    } },
+    { tab = "Farm", icon = "coins", sections = {
+        { name = "Auto Farm", items = {
+            { "toggle", "Auto Farm Coins", "coins", function(v)
+                if not v then
+                    if curTween then curTween:Cancel() end
+                    local _, hum, root = myParts()
+                    if hum and root then hum:MoveTo(root.Position) end   -- stop a Walk in progress
+                end
+            end },
+            { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween", "Walk" } },
+            { "toggle", "Noclip While Farming", "coinNoclip" },
+        } },
+        { name = "Tuning", items = {
+            { "slider", "Tween Speed (studs/s)", "coinSpeed", 20, 200, 10 },
+            { "slider", "Farm Delay (ms)", "coinDelay", 40, 500, 10 },
         } },
     } },
     { tab = "Misc", icon = "wrench", sections = {
@@ -1413,7 +1418,9 @@ loop(0.12, function()
     end
 end)
 
--- auto farm coins (Teleport = instant hop to each coin, Tween = smooth move)
+-- auto farm coins
+-- Teleport: instant hop to each coin | Tween: smooth straight-line move at Tween Speed
+-- Walk: the character walks to the coin with Humanoid:MoveTo at its normal WalkSpeed (no position writes)
 loop(0.2, function()
     if not S.coins then return end
     local _, hum, root = myParts()
@@ -1421,7 +1428,18 @@ loop(0.2, function()
     local coin, dist = nearestCoin(root)
     if not (coin and coin.Parent) then return 0.3 end
     coinTries[coin] = (coinTries[coin] or 0) + 1
-    if S.coinMode == "Tween" then
+    if S.coinMode == "Walk" then
+        hum:MoveTo(coin.Position)
+        local t0 = os.clock()
+        local limit = dist / math.max(hum.WalkSpeed, 1) + 1.5
+        while alive and S.coins and coin.Parent and root.Parent and hum.Health > 0
+            and os.clock() - t0 < limit do
+            local dx, dz = coin.Position.X - root.Position.X, coin.Position.Z - root.Position.Z
+            if math.sqrt(dx * dx + dz * dz) < 3 then break end
+            task.wait(0.1)
+        end
+        return S.coinDelay / 1000
+    elseif S.coinMode == "Tween" then
         local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
         curTween = TweenService:Create(root,
             TweenInfo.new(math.max(dist / S.coinSpeed, 0.05), Enum.EasingStyle.Linear),
@@ -1492,7 +1510,7 @@ track(RunService.Heartbeat:Connect(function()
     end
 end))
 
--- noclip (also active during auto coins, to pass through walls)
+-- noclip (also active during auto coins unless "Noclip While Farming" is off)
 local wasNoclip = false
 local function restoreCollision()
     local char = lp.Character
@@ -1503,7 +1521,7 @@ local function restoreCollision()
     end
 end
 track(RunService.Stepped:Connect(function()
-    local active = S.noclip or S.coins
+    local active = S.noclip or (S.coins and S.coinNoclip)
     local char = lp.Character
     if not char then return end
     if active then
