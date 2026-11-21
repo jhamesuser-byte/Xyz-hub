@@ -29,12 +29,10 @@ local S = {
     -- visuals
     esp = true, labels = true, dist = true, notify = true,
     coinEsp = false, gunEsp = true, fullbright = false,
-    -- aimbot
-    aimbot = false, aimFov = 150, aimSpeed = 20, aimShowFov = true,
     -- silent aim
-    silent = false, silentFov = 200, silentHit = 100, silentShowFov = false,
+    silent = false, silentFov = 200, silentHit = 100, silentPart = "Head", silentShowFov = false,
     -- weapons
-    autoShoot = false, aura = false, auraRange = 14,
+    autoShoot = false, shotDelay = 600, aura = false, auraRange = 14,
     -- farm
     coins = false, coinMode = "Teleport", coinDelay = 120, coinSpeed = 60, coinNoclip = true,
     gun = false, gunMode = "Touch",
@@ -50,13 +48,11 @@ local CFG = {
     target = "Auto",     -- Auto: murderer targets everyone, everyone else targets the murderer
     prio = "Center",     -- Center = closest to the crosshair, Closest = closest in studs
     maxDist = 600,
-    aimPart = "Head", silentPart = "Head",
     wall = true,         -- only target visible players
     flingRange = 30,     -- studs: other players closer than this stop colliding with you (Anti Fling)
     maxVelocity = 300,   -- studs/s and rad/s above which Anti Fling snaps you back (uncalibrated)
     maxSpin = 80,
     voidMargin = 50,     -- studs above FallenPartsDestroyHeight where Anti Void kicks in
-    shotCooldown = 0.6,  -- seconds between Auto Shoot attempts (uncalibrated: not measured against the real gun reload)
 }
 
 local COLORS = {
@@ -144,7 +140,7 @@ local function coinContainer()
 end
 
 -- ------------------------------------------------------------
--- Target selection (aimbot / silent aim / auto shoot)
+-- Target selection (silent aim / auto shoot)
 -- ------------------------------------------------------------
 local PARTS = {
     Head = { "Head" },
@@ -161,7 +157,6 @@ end
 
 -- set by "Shoot Murderer": forces the target role regardless of the Target setting
 local FORCE = { role = nil, target = nil }   -- target: part the camera is held on during a forced shot
-local aimTarget   -- part currently held by the aimbot (sticky lock)
 
 local function wantRole(role, myRole)
     if FORCE.role then return role == FORCE.role end
@@ -208,6 +203,7 @@ local function pickTarget(fov, maxDist, partKey, wall)
     local camPos = cam.CFrame.Position
     local bestPart, bestPlr
     local bestKey = math.huge
+    local anywhere = (fov == math.huge)   -- forced shot: no on-screen requirement, closest wins
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= lp then
             local char = plr.Character
@@ -218,10 +214,10 @@ local function pickTarget(fov, maxDist, partKey, wall)
                     local dist = (part.Position - camPos).Magnitude
                     if dist <= maxDist then
                         local sp, on = cam:WorldToViewportPoint(part.Position)
-                        if on and sp.Z > 0 then
-                            local dd = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+                        if anywhere or (on and sp.Z > 0) then
+                            local dd = anywhere and dist or (Vector2.new(sp.X, sp.Y) - center).Magnitude
                             if dd <= fov then
-                                local key = (CFG.prio == "Closest") and dist or dd
+                                local key = (anywhere or CFG.prio == "Closest") and dist or dd
                                 if key < bestKey and ((not wall) or visible(cam, part, char)) then
                                     bestKey, bestPart, bestPlr = key, part, plr
                                 end
@@ -236,6 +232,22 @@ local function pickTarget(fov, maxDist, partKey, wall)
     return bestPart, bestPart.Position, bestPlr
 end
 
+-- sticky lock: keep the current target until he dies, hides, goes out of range or leaves 1.6x the FOV
+local function holdTarget(cam, part, fov)
+    if not (part and part.Parent) then return false end
+    local char = part.Parent
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health <= 0 then return false end
+    local sp, on = cam:WorldToViewportPoint(part.Position)
+    if not on or sp.Z <= 0 then return false end
+    if (Vector2.new(sp.X, sp.Y) - cam.ViewportSize / 2).Magnitude > fov * 1.6 then return false end
+    if (part.Position - cam.CFrame.Position).Magnitude > CFG.maxDist then return false end
+    local plr = Players:GetPlayerFromCharacter(char)
+    if not plr or not wantRole(roleCached(plr), roleOf(lp)) then return false end
+    if CFG.wall and not visible(cam, part, char) then return false end
+    return true
+end
+
 -- ------------------------------------------------------------
 -- Silent Aim (hooks) - state shared with the hooks via env.__MM2_SIL
 -- ------------------------------------------------------------
@@ -243,6 +255,7 @@ end
 local SIL = {
     lock = false, pos = Vector3.zero, part = nil, mode = "All", hit = 100,
     camPos = Vector3.zero, rootPos = Vector3.zero, mouse = nil, cam = nil,
+    held = nil, rollT = 0, rollOk = false,
 }
 pcall(function() SIL.mouse = lp:GetMouse() end)
 env.__MM2_SIL = SIL
@@ -251,8 +264,16 @@ function SIL.near(origin)
     return (origin - SIL.camPos).Magnitude < 20 or (origin - SIL.rootPos).Magnitude < 20
 end
 
+-- One roll covers every hooked call of the same shot (Raycast + remote + Mouse.Hit are read within a
+-- few frames of each other); rolling per call made low Hit Chance redirect only half of a shot.
 function SIL.roll()
-    return SIL.hit >= 100 or math.random(1, 100) <= SIL.hit
+    if SIL.hit >= 100 then return true end
+    local now = os.clock()
+    if now - SIL.rollT > 0.3 then
+        SIL.rollT = now
+        SIL.rollOk = math.random(1, 100) <= SIL.hit
+    end
+    return SIL.rollOk
 end
 
 -- IMPORTANT: inside the hooks do not use colon calls (inst:Method()): that overwrites the pending
@@ -380,7 +401,10 @@ end
 local function computeSilent()
     SIL.lock = false
     SIL.hit = FORCE.role and 100 or S.silentHit
-    if not (S.silent or FORCE.role) then return end
+    if not (S.silent or FORCE.role) then
+        SIL.held = nil
+        return
+    end
     local cam = workspace.CurrentCamera
     local char, hum, root = myParts()
     if not cam or not char or not hum or hum.Health <= 0 then return end
@@ -390,9 +414,16 @@ local function computeSilent()
     SIL.rootPos = root and root.Position or SIL.camPos
     local part, pos
     if FORCE.role then
-        part, pos = pickTarget(5000, 5000, "Torso", false)
+        part, pos = pickTarget(math.huge, math.huge, "Torso", false)
     else
-        part, pos = pickTarget(S.silentFov, CFG.maxDist, CFG.silentPart, CFG.wall)
+        -- keep the current target while it stays valid, so the lock does not jump between players
+        local held = SIL.held
+        if held and holdTarget(cam, held, S.silentFov) and partOf(held.Parent, S.silentPart) == held then
+            part, pos = held, held.Position
+        else
+            part, pos = pickTarget(S.silentFov, CFG.maxDist, S.silentPart, CFG.wall)
+        end
+        SIL.held = part
     end
     if part then
         SIL.lock = true
@@ -596,8 +627,6 @@ local function updateStatus(murd, sher, myRoot)
     info("hp", "Health: " .. (myHum and (math.floor(myHum.Health) .. "/" .. math.floor(myHum.MaxHealth)) or "?"))
     info("players", "Players: " .. total .. " (" .. nAlive .. " alive)")
 
-    local at = aimTarget and playerOfPart(aimTarget)
-    info("aimst", "Aimbot: " .. (S.aimbot and (at and ("locked on " .. at.DisplayName) or "searching") or "off"))
     local sp = SIL.lock and playerOfPart(SIL.part)
     info("silst", "Silent Aim: " .. (S.silent and (sp and ("locked on " .. sp.DisplayName) or "searching") or "off"))
 
@@ -859,7 +888,6 @@ local UI = {
             { "label", "Players: ...", "players" },
         } },
         { name = "Aim", items = {
-            { "label", "Aimbot: ...", "aimst" },
             { "label", "Silent Aim: ...", "silst" },
         } },
         { name = "Actions", items = {
@@ -876,18 +904,13 @@ local UI = {
     { tab = "Combat", icon = "crosshair", sections = {
         { name = "Sheriff", items = {
             { "toggle", "Auto Shoot Murderer", "autoShoot" },
+            { "slider", "Auto Shoot Delay (ms)", "shotDelay", 300, 3000, 100 },
             { "toggle", "Auto Grab Gun", "gun" },
             { "drop", "Grab Mode", "gunMode", { "Touch", "Teleport" } },
         } },
         { name = "Murderer", items = {
             { "toggle", "Kill Aura", "aura" },
             { "slider", "Kill Aura Range", "auraRange", 5, 80, 3 },
-        } },
-        { name = "Aimbot", items = {
-            { "toggle", "Aimbot", "aimbot" },
-            { "slider", "Aim Speed", "aimSpeed", 1, 100, 5 },
-            { "slider", "Aimbot FOV", "aimFov", 20, 600, 10 },
-            { "toggle", "Show FOV Circle", "aimShowFov" },
         } },
         { name = "Silent Aim", items = {
             { "toggle", "Silent Aim", "silent", function(v)
@@ -896,6 +919,7 @@ local UI = {
                     notify("Silent Aim unavailable: your executor has no hookmetamethod")
                 end
             end },
+            { "drop", "Target Part", "silentPart", { "Head", "Torso" } },
             { "slider", "Silent Aim FOV", "silentFov", 20, 600, 10 },
             { "slider", "Hit Chance (%)", "silentHit", 1, 100, 5 },
             { "toggle", "Show FOV Circle", "silentShowFov" },
@@ -976,7 +1000,7 @@ local UI = {
 }
 
 -- names of the toggles that count as "active features" in the Status tab (display-only toggles are left out)
-local QUIET = { aimShowFov = true, silentShowFov = true, labels = true, dist = true, notify = true,
+local QUIET = { silentShowFov = true, labels = true, dist = true, notify = true,
     coinNoclip = true, antiafk = true }
 local TOGGLES = {}
 for _, t in ipairs(UI) do
@@ -1531,7 +1555,6 @@ local function makeCircle(color)
     f.Parent = fovGui
     return f
 end
-local circAim = makeCircle(Color3.fromRGB(255, 255, 255))
 local circSil = makeCircle(Color3.fromRGB(190, 120, 255))
 mount(fovGui)
 
@@ -1578,31 +1601,9 @@ end
 loop(0.4, refresh)
 loop(2, saveSettings)
 
--- Aimbot FOV: when Silent Aim is on the aimbot also grabs whatever is inside the Silent Aim FOV
-local function aimFovEff()
-    if S.silent then return math.max(S.aimFov, S.silentFov) end
-    return S.aimFov
-end
-
--- sticky lock: keep the current target until he dies, hides, goes out of range or leaves 1.6x the FOV
-local function holdTarget(cam, part, fov)
-    if not (part and part.Parent) then return false end
-    local char = part.Parent
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum or hum.Health <= 0 then return false end
-    local sp, on = cam:WorldToViewportPoint(part.Position)
-    if not on or sp.Z <= 0 then return false end
-    if (Vector2.new(sp.X, sp.Y) - cam.ViewportSize / 2).Magnitude > fov * 1.6 then return false end
-    if (part.Position - cam.CFrame.Position).Magnitude > CFG.maxDist then return false end
-    local plr = Players:GetPlayerFromCharacter(char)
-    if not plr or not wantRole(roleCached(plr), roleOf(lp)) then return false end
-    if CFG.wall and not visible(cam, part, char) then return false end
-    return true
-end
-
--- camera: silent aim (target calculation), FOV circles, aimbot
+-- camera: silent aim (target calculation) and its FOV circle
 -- Bound AFTER Roblox's camera script (Camera priority + 1): a plain RenderStepped connection can run
--- before the camera update, which then overwrites the CFrame the aimbot just set.
+-- before the camera update, which then overwrites the CFrame a forced shot just set.
 local RS_NAME = "MM2Hub_Aim"
 pcall(function() RunService:UnbindFromRenderStep(RS_NAME) end)
 RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, function()
@@ -1617,33 +1618,9 @@ RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, funct
 
     pcall(computeSilent)
 
-    local af = aimFovEff()
-    circAim.Size = UDim2.fromOffset(af * 2, af * 2)
-    circAim.Visible = S.aimbot and S.aimShowFov
     circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2)
     circSil.Visible = S.silent and S.silentShowFov
 
-    if S.aimbot then
-        local char, hum = myParts()
-        local part, pos
-        if char and hum and hum.Health > 0 and char:FindFirstChildOfClass("Tool") then
-            if aimTarget and holdTarget(cam, aimTarget, af) then
-                part, pos = aimTarget, aimTarget.Position
-            else
-                local ok, p2, pos2 = pcall(pickTarget, af, CFG.maxDist, CFG.aimPart, CFG.wall)
-                if ok and p2 then part, pos = p2, pos2 end
-            end
-        end
-        aimTarget = part
-        if part then
-            local cp = cam.CFrame.Position
-            local want = (pos - cp).Unit
-            local a = math.clamp(S.aimSpeed / 100, 0.02, 1)
-            cam.CFrame = CFrame.new(cp, cp + cam.CFrame.LookVector:Lerp(want, a))
-        end
-    else
-        aimTarget = nil
-    end
 end)
 
 -- combat: auto shoot (sheriff), kill aura (murderer)
@@ -1654,7 +1631,7 @@ loop(0.12, function()
     local myRole = roleOf(lp)
 
     -- Auto Shoot: as Sheriff, fire at the murderer whenever he is in range with a clear line of sight
-    if S.autoShoot and myRole == "Sheriff" and not shooting and os.clock() - lastShot > CFG.shotCooldown then
+    if S.autoShoot and myRole == "Sheriff" and not shooting and os.clock() - lastShot > S.shotDelay / 1000 then
         local cam = workspace.CurrentCamera
         local mchar = cam and findMurderer()
         local part = mchar and (mchar:FindFirstChild("UpperTorso") or mchar:FindFirstChild("Torso")
@@ -1882,7 +1859,6 @@ env.__MM2_CLEANUP = function()
     S.speed, S.jump, S.fly, S.noclip, S.coins, S.gun = false, false, false, false, false, false
     FORCE.role = nil
     FORCE.target = nil
-    aimTarget = nil
     pcall(function() RunService:UnbindFromRenderStep(RS_NAME) end)
     S.fullbright = false
     if curTween then pcall(function() curTween:Cancel() end) end
