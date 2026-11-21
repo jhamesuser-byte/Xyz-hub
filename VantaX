@@ -1,3 +1,15 @@
+-- ============================================================
+-- MM2 Hub | Murder Mystery 2 (Roblox) | Slate UI
+-- Main     : Round Info | Grab Gun | Shoot Murderer | Teleport to Sheriff / Murderer
+-- Combat   : Sheriff (Auto Shoot Murderer, Auto Grab Gun) | Murderer (Kill Aura) | Aimbot | Silent Aim
+-- Visuals  : Player ESP | Names | Distance | Role Notifier | Coin ESP | Gun ESP | Fullbright
+-- Movement : WalkSpeed | JumpPower | Fly | Infinite Jump | Noclip | Anti Fling | Anti Void
+-- Farm     : Auto Farm Coins (Teleport / Tween / Walk)
+-- Misc     : Anti-AFK | Rejoin | Server Hop | Unload Script
+-- Menu     : RightShift (PC) or the Slate icon (mobile).
+-- Settings : saved to MM2Hub_settings.json in the executor workspace (needs readfile/writefile).
+-- ============================================================
+
 local SLATE_URL = "https://raw.githubusercontent.com/PulseZax/Slate/refs/heads/main/.lua"
 
 local Players         = game:GetService("Players")
@@ -41,6 +53,7 @@ local S = {
     -- movement
     speed = false, speedVal = 30, jump = false, jumpVal = 80,
     fly = false, flySpeed = 60, infjump = false, noclip = false,
+    antiFling = true, antiVoid = true,
     -- misc
     antiafk = true,
 }
@@ -51,6 +64,10 @@ local CFG = {
     maxDist = 600,
     aimPart = "Head", silentPart = "Head",
     wall = true,         -- only target visible players
+    flingRange = 30,     -- studs: other players closer than this stop colliding with you (Anti Fling)
+    maxVelocity = 300,   -- studs/s and rad/s above which Anti Fling snaps you back (uncalibrated)
+    maxSpin = 80,
+    voidMargin = 50,     -- studs above FallenPartsDestroyHeight where Anti Void kicks in
     shotCooldown = 0.6,  -- seconds between Auto Shoot attempts (uncalibrated: not measured against the real gun reload)
 }
 
@@ -804,6 +821,10 @@ local UI = {
             { "toggle", "Infinite Jump", "infjump" },
             { "toggle", "Noclip", "noclip" },
         } },
+        { name = "Protection", items = {
+            { "toggle", "Anti Fling", "antiFling" },
+            { "toggle", "Anti Void", "antiVoid" },
+        } },
     } },
     { tab = "Farm", icon = "coins", sections = {
         { name = "Auto Farm", items = {
@@ -1551,6 +1572,49 @@ track(lp.Idled:Connect(function()
             vu:CaptureController()
             vu:ClickButton2(Vector2.new())
         end)
+    end
+end))
+
+-- protection (defensive, local only)
+-- Anti Fling: nearby players' body parts stop colliding with you, so they cannot push or spin you.
+-- Their collision stays off locally until their character respawns, even after you turn this off.
+track(RunService.Stepped:Connect(function()
+    if not S.antiFling then return end
+    local _, _, root = myParts()
+    if not root then return end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp then
+            local c = plr.Character
+            local r = c and c:FindFirstChild("HumanoidRootPart")
+            if r and (r.Position - root.Position).Magnitude < CFG.flingRange then
+                for _, p in ipairs(c:GetChildren()) do
+                    if p:IsA("BasePart") then p.CanCollide = false end
+                end
+            end
+        end
+    end
+end))
+
+-- Anti Fling (speed guard) + Anti Void: remember the last normal position and snap back to it
+local safeCF
+track(RunService.Heartbeat:Connect(function()
+    local _, hum, root = myParts()
+    if not hum or not root or hum.Health <= 0 then
+        safeCF = nil
+        return
+    end
+    local flung = S.antiFling and not S.fly
+        and (root.AssemblyLinearVelocity.Magnitude > CFG.maxVelocity
+            or root.AssemblyAngularVelocity.Magnitude > CFG.maxSpin)
+    local voided = S.antiVoid and root.Position.Y < workspace.FallenPartsDestroyHeight + CFG.voidMargin
+    if flung or voided then
+        if safeCF then
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = safeCF
+        end
+    else
+        safeCF = root.CFrame
     end
 end))
 
