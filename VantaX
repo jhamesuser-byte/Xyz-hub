@@ -1797,7 +1797,7 @@ end
 -- Run animation (Player tab). Two ways, tried in this order; both end up as an animation played through your
 -- character's own Animator, which Roblox replicates to the other players:
 --   1. "animate": the AnimationId inside the character's stock Animate script (run and walk sets) is replaced and
---      Animate is restarted. DISABLED by default (USE_ANIMATE = false), see below.
+--      Animate is restarted. DISABLED by default (set env.__MM2_USE_ANIMATE = true to enable it).
 --   2. "track": the clip is loaded and played directly through the Humanoid's Animator at Movement priority
 --      while the character runs. The stock tracks are left alone on purpose: if the server rejects our clip,
 --      the other players still see the normal run instead of a frozen character.
@@ -1921,15 +1921,12 @@ end
 -- ---- way 2: a track on the Humanoid's Animator ----
 local runTrack, runTrackId
 
-local trackAnim = setmetatable({}, { __mode = "k" })   -- track -> its Animation instance (kept alive while the track plays)
-
 local function stopRunTrack()
     if runTrack then
-        local a = trackAnim[runTrack]
+        local _, a = pcall(function() return runTrack.Animation end)
         pcall(function() runTrack:Stop(0.15) end)
         pcall(function() runTrack:Destroy() end)
-        if a then pcall(function() a:Destroy() end) end
-        trackAnim[runTrack] = nil
+        if typeof(a) == "Instance" then pcall(function() a:Destroy() end) end
     end
     runTrack, runTrackId = nil, nil
 end
@@ -1954,14 +1951,12 @@ local function loadRunTrack(animator, id)
         return nil
     end
     t.Looped = true
-    t.Priority = Enum.AnimationPriority.Action
-    trackAnim[t] = anim
+    t.Priority = Enum.AnimationPriority.Movement
     return t
 end
 
 -- false = never touch the stock Animate script: the original tracks keep playing (and replicating),
 -- ours is layered on top at Movement priority. If the server rejects our clip, others still see the normal run.
-local USE_ANIMATE = false
 
 local function applyRunAnimation(quiet, fresh)
     local char, hum = myParts()
@@ -1989,7 +1984,7 @@ local function applyRunAnimation(quiet, fresh)
         notify("Could not load that animation")
         return
     end
-    if USE_ANIMATE and setViaAnimate(char, hum, id) then
+    if env.__MM2_USE_ANIMATE and setViaAnimate(char, hum, id) then
         stopRunTrack()
         runMode, activeRunId = "animate", id
         if not quiet then notify("Run animation set: " .. S.runAnim, "success") end
@@ -2047,9 +2042,9 @@ track(RunService.Heartbeat:Connect(function()
                         runTrack, runTrackId, runMode = t, id, "track"
                         notify("Run animation switched to direct playback")
                     elseif t then
-                        local a = trackAnim[t]
+                        local _, a = pcall(function() return t.Animation end)
                         pcall(function() t:Destroy() end)
-                        if a then pcall(function() a:Destroy() end) end
+                        if typeof(a) == "Instance" then pcall(function() a:Destroy() end) end
                     end
                 end)
                 switching = false
