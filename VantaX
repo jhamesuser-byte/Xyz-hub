@@ -5,7 +5,6 @@ local RunService      = game:GetService("RunService")
 local TweenService    = game:GetService("TweenService")
 local UIS             = game:GetService("UserInputService")
 local Lighting        = game:GetService("Lighting")
-local StarterGui      = game:GetService("StarterGui")
 local TeleportService = game:GetService("TeleportService")
 local HttpService     = game:GetService("HttpService")
 local lp              = Players.LocalPlayer
@@ -845,9 +844,14 @@ local function isGunDrop(inst)
 end
 
 local gunDropCache
-for _, d in ipairs(workspace:GetDescendants()) do
-    if isGunDrop(d) then gunDropCache = d end
-end
+task.spawn(function()   -- the scan is spread over many frames instead of freezing the game once at load
+    local n = 0
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if isGunDrop(d) then gunDropCache = d end
+        n = n + 1
+        if n % 4000 == 0 then task.wait() end
+    end
+end)
 track(workspace.DescendantAdded:Connect(function(d)
     if isGunDrop(d) then gunDropCache = d end
 end))
@@ -2861,7 +2865,7 @@ mount(fovGui)
 -- Open the menu: Slate; if it fails, the simple menu
 -- ------------------------------------------------------------
 local ui
-local slateUi, slateErr = buildSlate()
+local slateUi = buildSlate()
 if slateUi then
     ui = slateUi
     menuKind = "Slate"
@@ -3076,8 +3080,9 @@ RunService:BindToRenderStep(RS_NAME, Enum.RenderPriority.Camera.Value + 1, funct
         endAutoShot()
     end
 
-    circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2)
-    circSil.Visible = (S.silent or S.autoShoot) and S.silentShowFov
+    local circOn = ((S.silent or S.autoShoot) and S.silentShowFov) == true
+    if circOn then circSil.Size = UDim2.fromOffset(S.silentFov * 2, S.silentFov * 2) end
+    if circSil.Visible ~= circOn then circSil.Visible = circOn end
 
 end)
 
@@ -3207,10 +3212,10 @@ end
 track(RunService.Heartbeat:Connect(function()
     local _, hum, root = myParts()
     if not hum or not root then return end
-    if S.speed then hum.WalkSpeed = S.speedVal end
+    if S.speed and hum.WalkSpeed ~= S.speedVal then hum.WalkSpeed = S.speedVal end
     if S.jump then
-        hum.UseJumpPower = true
-        hum.JumpPower = S.jumpVal
+        if not hum.UseJumpPower then hum.UseJumpPower = true end
+        if hum.JumpPower ~= S.jumpVal then hum.JumpPower = S.jumpVal end
     end
     if S.fly then
         local cam = workspace.CurrentCamera
@@ -3246,14 +3251,23 @@ local function restoreCollision()
         if p and p:IsA("BasePart") then p.CanCollide = true end
     end
 end
+local noclipParts, noclipChar, noclipT = {}, nil, 0   -- own parts, rebuilt every 0.25 s (tools and accessories come and go)
 track(RunService.Stepped:Connect(function()
     local active = (S.noclip or (S.coins and S.coinNoclip)) and not FLING.busy   -- a fling needs collisions
     local char = lp.Character
     if not char then return end
     if active then
         wasNoclip = true
-        for _, p in ipairs(char:GetDescendants()) do
-            if p:IsA("BasePart") then p.CanCollide = false end
+        local now = os.clock()
+        if noclipChar ~= char or now - noclipT > 0.25 then
+            noclipChar, noclipT = char, now
+            noclipParts = {}
+            for _, p in ipairs(char:GetDescendants()) do
+                if p:IsA("BasePart") then noclipParts[#noclipParts + 1] = p end
+            end
+        end
+        for _, p in ipairs(noclipParts) do
+            if p.CanCollide then p.CanCollide = false end
         end
     elseif wasNoclip then
         wasNoclip = false
@@ -3283,14 +3297,28 @@ end))
 -- protection (defensive, local only)
 -- Anti Fling: while on, every other player's body parts stop colliding with you, so you walk through them.
 -- Turning it off, or entering fling mode (any fling started, until Stop Fling), gives their collision back.
-local antiSaved = {}   -- part -> its original CanCollide
+local antiSaved = {}   -- part -> true for every part switched to non-colliding (given back when the feature stops)
+-- Parts of every other character. The game keeps switching limb collision back on, so the write must happen
+-- every physics step, but walking the whole character tree every step is not needed: the list is rebuilt
+-- every 0.5 s (and for a new character at once).
+local antiParts = setmetatable({}, { __mode = "k" })   -- character -> { parts = {...}, t = scan time }
 track(RunService.Stepped:Connect(function()
     if S.antiFling and not FLING.busy and not FLING.active then
+        local now = os.clock()
         for _, plr in ipairs(Players:GetPlayers()) do
             local c = plr ~= lp and plr.Character
             if c then
-                for _, p in ipairs(c:GetDescendants()) do
-                    if p:IsA("BasePart") and p.CanCollide then
+                local e = antiParts[c]
+                if not e or now - e.t > 0.5 then
+                    local parts = {}
+                    for _, p in ipairs(c:GetDescendants()) do
+                        if p:IsA("BasePart") then parts[#parts + 1] = p end
+                    end
+                    e = { parts = parts, t = now }
+                    antiParts[c] = e
+                end
+                for _, p in ipairs(e.parts) do
+                    if p.CanCollide then
                         antiSaved[p] = true
                         p.CanCollide = false
                     end
@@ -3314,6 +3342,10 @@ track(RunService.Heartbeat:Connect(function()
         return
     end
     if FLING.busy then return end   -- our own fling: do not snap back
+    if not S.antiVoid then
+        safeCF = nil   -- nothing to track while it is off
+        return
+    end
     local voided = S.antiVoid and root.Position.Y < workspace.FallenPartsDestroyHeight + CFG.voidMargin
     if voided then
         if safeCF then
