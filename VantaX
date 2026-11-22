@@ -1939,8 +1939,14 @@ local function applyRunAnimation(quiet, fresh)
     end
 end
 
--- keeps the custom track playing only while actually moving on the ground, at a speed that roughly follows
--- WalkSpeed (16 studs/s is R15's default: this ratio is NOT calibrated against the stock animation's own pace)
+-- keeps the custom track playing only while actually running, at a speed that roughly follows WalkSpeed
+-- (16 studs/s is R15's default: this ratio is NOT calibrated against the stock animation's own pace).
+-- "Running" is read from the Humanoid's own state (what Animate itself keys off), not FloorMaterial: that
+-- first attempt could read Air on some floors/ramps and silently stop the track from ever playing.
+local RUNNING_STATES = {
+    [Enum.HumanoidStateType.Running] = true,
+    [Enum.HumanoidStateType.RunningNoPhysics] = true,
+}
 track(RunService.Heartbeat:Connect(function()
     if S.runAnim == "Off" or not runTrack then return end
     local char, hum = myParts()
@@ -1948,7 +1954,7 @@ track(RunService.Heartbeat:Connect(function()
         stopRunTrack()
         return
     end
-    local moving = hum.MoveDirection.Magnitude > 0.05 and hum.FloorMaterial ~= Enum.Material.Air
+    local moving = hum.MoveDirection.Magnitude > 0.05 and RUNNING_STATES[hum:GetState()] == true
     runTrack:AdjustSpeed(math.clamp(hum.WalkSpeed / 16, 0.1, 4))
     if moving and not runTrack.IsPlaying then
         runTrack:Play(0.2)
