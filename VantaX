@@ -1903,7 +1903,7 @@ local function ensureRunTrack(hum, id)
     anim:Destroy()
     if not ok or not t then return nil end
     t.Looped = true
-    t.Priority = Enum.AnimationPriority.Action   -- outranks the stock run/walk track (Movement priority)
+    t.Priority = Enum.AnimationPriority.Core   -- same tier as the stock run/walk track (see the Heartbeat below)
     runTrack, runTrackId = t, id
     return t
 end
@@ -1960,6 +1960,19 @@ track(RunService.Heartbeat:Connect(function()
         runTrack:Play(0.2)
     elseif not moving and runTrack.IsPlaying then
         runTrack:Stop(0.2)
+    end
+
+    -- Animate keeps its own "RunAnim"/"WalkAnim" track at Core priority (the same tier ours uses) and keeps
+    -- restarting it on every state change, so it would otherwise blend with (or wash out) our custom clip.
+    -- Silencing its weight each time Animate reasserts it, instead of stopping it, lets Animate keep running
+    -- normally underneath (idle, jump, climb, swim all untouched) while only the run/walk pose is replaced.
+    if runTrack.IsPlaying then
+        local animator = runTrack.Animator
+        for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+            if t ~= runTrack and (t.Name == "RunAnim" or t.Name == "WalkAnim") and t.WeightTarget > 0.01 then
+                pcall(function() t:AdjustWeight(0.0001, 0.1) end)
+            end
+        end
     end
 end))
 
