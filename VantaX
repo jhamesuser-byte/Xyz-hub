@@ -1797,11 +1797,18 @@ local function flingSelected()
 end
 
 -- ------------------------------------------------------------
--- Run animation (Player tab). Rewrites the AnimationId inside the character's own Animate script (run and walk
--- sets) and restarts that script, so the game plays the animation itself and everyone sees it. R15 only.
--- The preset ids are from memory and NOT verified on this build: every id is test-loaded before it is applied, and
--- the original ids are restored when it does not load. "Nearest Player" copies the run animation another player
--- is wearing right now, so it needs no id at all.
+-- Run animation (Player tab). Played directly through the character's Humanoid.Animator instead of by editing
+-- the stock Animate script's Animation objects.
+--
+-- Why: Animate is a LocalScript parented to your character, so it only ever RUNS on your own client - other
+-- clients never execute it. What makes your default walk/run visible to everyone is Animator:Play(), a call
+-- that Roblox replicates from the owning client to everyone else by itself. Editing the AnimationId property
+-- inside Animate's Animation objects only ever changes the copy that exists on your own client; it is never
+-- sent anywhere, so nobody else ever saw it, even though it looked fine to you. Loading and playing the custom
+-- clip through the Animator directly uses that same replicated channel, so everyone sees it this way.
+--
+-- The preset ids are from memory and NOT verified on this build: every id is test-loaded before it is applied.
+-- "Nearest Player" copies the run animation another player is wearing right now, so it needs no id at all.
 -- ------------------------------------------------------------
 local RUN_PRESETS = {
     Ninja       = "rbxassetid://656118852",
@@ -1828,7 +1835,6 @@ do
     for _, n in ipairs(names) do RUN_CHOICES[#RUN_CHOICES + 1] = n end
     RUN_CHOICES[#RUN_CHOICES + 1] = "Nearest Player"
 end
-local origAnimIds = setmetatable({}, { __mode = "k" })   -- Animation instance -> id it had before we changed it
 local copiedRunId   -- last id taken from "Nearest Player", reused after a respawn
 
 local function nearestPlayerRunId()
@@ -1874,75 +1880,89 @@ local function animationLoads(hum, id)
     return length > 0
 end
 
+-- the currently playing custom track (replicated through its Animator) and the id it was loaded with
+local runTrack, runTrackId
+
+local function stopRunTrack()
+    if runTrack then
+        pcall(function() runTrack:Stop(0.15) end)
+        pcall(function() runTrack:Destroy() end)
+    end
+    runTrack, runTrackId = nil, nil
+end
+
+-- loads (if needed) and returns the track for this id on this Humanoid's current Animator
+local function ensureRunTrack(hum, id)
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if not animator then return nil end
+    if runTrack and runTrackId == id and runTrack.Animator == animator then return runTrack end
+    stopRunTrack()
+    local anim = Instance.new("Animation")
+    anim.AnimationId = id
+    local ok, t = pcall(function() return animator:LoadAnimation(anim) end)
+    anim:Destroy()
+    if not ok or not t then return nil end
+    t.Looped = true
+    t.Priority = Enum.AnimationPriority.Action   -- outranks the stock run/walk track (Movement priority)
+    runTrack, runTrackId = t, id
+    return t
+end
+
 local function applyRunAnimation(quiet, fresh)
     local char, hum = myParts()
     if not (char and hum) or hum.Health <= 0 then
         if not quiet then notify("Your character is not ready") end
         return
     end
-    local animate = char:FindFirstChild("Animate") or char:WaitForChild("Animate", 3)
-    if not animate then
-        if not quiet then notify("This game has no Animate script") end
+    if S.runAnim == "Off" then
+        stopRunTrack()
+        if not quiet then notify("Run animation turned off") end
         return
     end
-    local anims = {}
-    for _, setName in ipairs({ "run", "walk" }) do
-        local folder = animate:FindFirstChild(setName)
-        if folder then
-            for _, a in ipairs(folder:GetChildren()) do
-                if a:IsA("Animation") then anims[#anims + 1] = a end
-            end
-        end
-    end
-    if #anims == 0 then
-        if not quiet then notify("No run animation found on this character") end
+    if hum.RigType ~= Enum.HumanoidRigType.R15 then
+        if not quiet then notify("Run animations need an R15 character") end
         return
     end
-
-    local choice = S.runAnim
-    local id
-    if choice ~= "Off" then
-        if hum.RigType ~= Enum.HumanoidRigType.R15 then
-            if not quiet then notify("Run animations need an R15 character") end
-            return
-        end
-        id = runIdFor(choice, fresh)
-        if not id then
-            notify(choice == "Nearest Player" and "No other player to copy from" or "No animation found")
-            return
-        end
-        if not animationLoads(hum, id) then
-            notify("Could not load that animation")
-            id = nil
-        end
+    local id = runIdFor(S.runAnim, fresh)
+    if not id then
+        notify(S.runAnim == "Nearest Player" and "No other player to copy from" or "No animation found")
+        return
     end
-
-    animate.Disabled = true
-    for _, a in ipairs(anims) do
-        if not origAnimIds[a] then origAnimIds[a] = a.AnimationId end
-        a.AnimationId = id or origAnimIds[a]
+    if not animationLoads(hum, id) then
+        notify("Could not load that animation")
+        return
     end
-    local animator = hum:FindFirstChildOfClass("Animator")
-    if animator then
-        for _, tr in ipairs(animator:GetPlayingAnimationTracks()) do
-            local pr = tr.Priority
-            if pr == Enum.AnimationPriority.Core or pr == Enum.AnimationPriority.Idle
-                or pr == Enum.AnimationPriority.Movement then
-                pcall(function() tr:Stop(0.1) end)
-            end
-        end
-    end
-    animate.Disabled = false
-    if not quiet then
-        notify(id and ("Run animation set: " .. choice) or "Run animation restored", id and "success" or "info")
+    if ensureRunTrack(hum, id) then
+        if not quiet then notify("Run animation set: " .. S.runAnim, "success") end
+    else
+        notify("Could not play that animation")
     end
 end
 
--- the new character after a respawn has a fresh Animate script: apply the chosen animation again
+-- keeps the custom track playing only while actually moving on the ground, at a speed that roughly follows
+-- WalkSpeed (16 studs/s is R15's default: this ratio is NOT calibrated against the stock animation's own pace)
+track(RunService.Heartbeat:Connect(function()
+    if S.runAnim == "Off" or not runTrack then return end
+    local char, hum = myParts()
+    if not (char and hum) or hum.Health <= 0 or runTrack.Animator ~= hum:FindFirstChildOfClass("Animator") then
+        stopRunTrack()
+        return
+    end
+    local moving = hum.MoveDirection.Magnitude > 0.05 and hum.FloorMaterial ~= Enum.Material.Air
+    runTrack:AdjustSpeed(math.clamp(hum.WalkSpeed / 16, 0.1, 4))
+    if moving and not runTrack.IsPlaying then
+        runTrack:Play(0.2)
+    elseif not moving and runTrack.IsPlaying then
+        runTrack:Stop(0.2)
+    end
+end))
+
+-- the new character after a respawn has a fresh Animator: the old track is gone with it
 track(lp.CharacterAdded:Connect(function()
+    runTrack, runTrackId = nil, nil
     if S.runAnim ~= "Off" then
         task.wait(0.6)
-        pcall(applyRunAnimation, true)
+        pcall(applyRunAnimation, true, false)
     end
 end))
 
@@ -3189,7 +3209,7 @@ end))
 env.__MM2_CLEANUP = function()
     pcall(saveSettings)   -- first: the resets below must not be saved
     S.runAnim = "Off"
-    pcall(applyRunAnimation, true)
+    pcall(stopRunTrack)
     alive = false
     FLING.stop = true
     S.silent = false
