@@ -34,7 +34,7 @@ local S = {
     -- weapons
     autoShoot = false, aura = false, auraRange = 14,
     -- farm
-    coins = false, coinMode = "Teleport", coinRate = 8, coinSpeed = 60, coinNoclip = true,
+    coins = false, coinMode = "Teleport", coinTpSpeed = 8, coinDelay = 120, coinSpeed = 60, coinNoclip = true,
     gun = false,
     -- movement
     speed = false, speedVal = 30, jump = false, jumpVal = 80,
@@ -43,11 +43,9 @@ local S = {
     -- fling
     loopMurd = false, loopSher = false, flingPick = "",
     -- misc
-    antiafk = true, quickButton = false,
+    antiafk = true, quickButton = false, menuScale = 100,
     -- animations
     runAnim = "Off",
-    -- menu window size (Slate): remembered between sessions
-    menuW = 540, menuH = 360, menuSize = "Large",
 }
 
 local CFG = {
@@ -1043,33 +1041,41 @@ end
 track(Players.PlayerRemoving:Connect(function(p)
     clearMark(p)
     ROLE[p] = nil
+    if p == lp then pcall(flushSettings) end   -- leaving the game: keep the last changes (Menu Size included)
 end))
 
 -- ------------------------------------------------------------
 -- Action functions
 -- ------------------------------------------------------------
 local curTween
-local coinVisited = setmetatable({}, { __mode = "k" })   -- coins already collected by this farm (never visited twice)
-local lastCoinContainer
+-- Coins already visited: a visited coin is never visited again. A collected coin can stay in the container, so
+-- without this the farm kept going back to the coin it had just collected (it is the nearest one: distance 0).
+local coinTries = setmetatable({}, { __mode = "k" })
+-- A free coin carries a TouchInterest, which the server removes once the coin is collected. After any coin has
+-- been seen with one, a coin without one counts as already collected (taken by another player or by us).
+-- This comes from memory of the game, not from a measurement here: if no coin ever shows a TouchInterest, only
+-- the visited-once rule applies.
+local coinSignal = false
+local function hasTouch(c)
+    return c:FindFirstChild("TouchInterest") ~= nil or c:FindFirstChildOfClass("TouchTransmitter") ~= nil
+end
+
 local function nearestCoin(root)
     local container = coinContainer()
     if not container then return nil, math.huge end
-    if container ~= lastCoinContainer then   -- a new container is a new round: forget the old visits
-        lastCoinContainer = container
-        table.clear(coinVisited)
-    end
-    local list, withTouch = {}, 0
-    for _, c in ipairs(container:GetDescendants()) do
-        if c:IsA("BasePart") and c.Name == "Coin_Server" and not coinVisited[c] then
-            list[#list + 1] = c
-            if c:FindFirstChildOfClass("TouchTransmitter") then withTouch = withTouch + 1 end
+    local coins = container:GetDescendants()
+    if not coinSignal then
+        for _, c in ipairs(coins) do
+            if c:IsA("BasePart") and c.Name == "Coin_Server" and hasTouch(c) then
+                coinSignal = true
+                break
+            end
         end
     end
-    -- a collected coin that is still in the map usually loses its touch interest: when only some coins have one,
-    -- those are the ones still collectable (when none or all have it, this filter changes nothing)
     local best, bd = nil, math.huge
-    for _, c in ipairs(list) do
-        if withTouch == 0 or c:FindFirstChildOfClass("TouchTransmitter") then
+    for _, c in ipairs(coins) do
+        if c:IsA("BasePart") and c.Name == "Coin_Server" and not coinTries[c]
+            and (not coinSignal or hasTouch(c)) then
             local d = (c.Position - root.Position).Magnitude
             if d < bd then best, bd = c, d end
         end
@@ -1794,7 +1800,9 @@ end
 --      Animate is restarted. Animate then plays the clip itself, with its own state switching and speed scaling,
 --      and there is only ONE move track, so there is nothing to blend with on the other players' screens.
 --   2. "track" (only when the character has no usable Animate script): the clip is loaded and played directly
---      through the Humanoid's Animator at Movement priority while the character runs.
+--      through the Humanoid's Animator at Movement priority while the character runs. The stock tracks are left
+--      alone on purpose: lowering their weight is replicated too, and when the custom track does not show on the
+--      other players' side it left the body standing still while running.
 -- If the game puts the original ids back, the "animate" way re-applies the clip within a second.
 --
 -- The preset ids are from memory and NOT verified on this build: every id is test-loaded before it is applied,
@@ -1991,18 +1999,50 @@ local RUNNING_STATES = {
     [Enum.HumanoidStateType.Running] = true,
     [Enum.HumanoidStateType.RunningNoPhysics] = true,
 }
-local function isStockMoveTrack(t)
-    local n = string.lower(t.Name)
-    return string.find(n, "run", 1, true) ~= nil or string.find(n, "walk", 1, true) ~= nil
+local lastWatch = -math.huge
+local movingSince, switching = nil, false
+
+-- "animate" way: is a track with the chosen clip really playing on this character?
+local function clipIsPlaying(hum)
+    local animator = hum:FindFirstChildOfClass("Animator")
+    if not animator then return true end   -- cannot tell: do not switch
+    for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
+        local a = t.Animation
+        if a and a.AnimationId == activeRunId then return true end
+    end
+    return false
 end
 
-local lastWatch = -math.huge
 track(RunService.Heartbeat:Connect(function()
     if S.runAnim == "Off" or not runMode then return end
     local char, hum = myParts()
     if not (char and hum) or hum.Health <= 0 then return end
 
     if runMode == "animate" then
+        -- Self-check: after 1.5 s of really running, the clip has to be playing. If Animate is not playing it (the
+        -- game replaced the script, or ignores the new ids), switch to playing it directly through the Animator.
+        local moving = hum.MoveDirection.Magnitude > 0.05 and RUNNING_STATES[hum:GetState()] == true
+        if moving then movingSince = movingSince or os.clock() else movingSince = nil end
+        if moving and not switching and os.clock() - movingSince > 1.5 and not clipIsPlaying(hum) then
+            switching = true
+            local id = activeRunId
+            task.spawn(function()
+                pcall(function()
+                    local animator = hum:FindFirstChildOfClass("Animator")
+                    local t = animator and loadRunTrack(animator, id)
+                    if t and runMode == "animate" and S.runAnim ~= "Off" then
+                        pcall(setViaAnimate, char, hum, nil)   -- Animate back to its own clips, ours plays on top
+                        runTrack, runTrackId, runMode = t, id, "track"
+                        notify("Run animation switched to direct playback")
+                    elseif t then
+                        pcall(function() t:Destroy() end)
+                    end
+                end)
+                switching = false
+            end)
+            return
+        end
+
         -- the game may put the original ids back (or replace the character's Animate): check once a second
         if os.clock() - lastWatch < 1 then return end
         lastWatch = os.clock()
@@ -2026,11 +2066,6 @@ track(RunService.Heartbeat:Connect(function()
     if moving then
         runTrack:AdjustSpeed(speed)
         if not runTrack.IsPlaying then runTrack:Play(0.2, 1, speed) end
-        for _, t in ipairs(runTrack.Animator:GetPlayingAnimationTracks()) do
-            if t ~= runTrack and isStockMoveTrack(t) and t.WeightTarget > 0.01 then
-                pcall(function() t:AdjustWeight(0.0001, 0.1) end)
-            end
-        end
     elseif runTrack.IsPlaying then
         runTrack:Stop(0.2)
     end
@@ -2039,6 +2074,7 @@ end))
 -- the new character after a respawn has a fresh Animate script and Animator: apply the clip again
 track(lp.CharacterAdded:Connect(function()
     runTrack, runTrackId, runMode, activeRunId = nil, nil, nil, nil
+    movingSince = nil
     if S.runAnim ~= "Off" then
         task.wait(0.6)
         pcall(applyRunAnimation, true, false)
@@ -2050,11 +2086,16 @@ end))
 -- label  : { "label", text }
 -- toggle : { "toggle", name, key, callback }
 -- drop   : { "drop",   name, key, options, callback }
+local MENU_WINDOW
+-- Slate window size for a Menu Size percentage: width, height, minimum width, minimum height
+local function menuMetrics(percent)
+    local scale = math.clamp((tonumber(percent) or 100) / 100, 0.5, 2)
+    return math.floor(540 * scale), math.floor(360 * scale), math.floor(480 * scale), math.floor(320 * scale)
+end
+
 -- slider : { "slider", name, key, min, max, step, callback }
 -- button : { "button", name, callback }
 -- ------------------------------------------------------------
-local applyMenuScale   -- assigned next to the Slate window code
-
 local UI = {
     { tab = "Status", icon = "activity", sections = {
         { name = "Round", items = {
@@ -2135,8 +2176,8 @@ local UI = {
             { "drop", "Run Animation", "runAnim", RUN_CHOICES, function() task.spawn(applyRunAnimation, false, true) end },
         } },
         { name = "Teleport", items = {
-            { "button", "TP to Sheriff", function() tpToRole("Sheriff") end },
-            { "button", "TP to Murderer", function() tpToRole("Murderer") end },
+            { "button", "Teleport to Sheriff", function() tpToRole("Sheriff") end },
+            { "button", "Teleport to Murderer", function() tpToRole("Murderer") end },
         } },
     } },
     { tab = "Visuals", icon = "eye", sections = {
@@ -2202,25 +2243,31 @@ local UI = {
     { tab = "Farm", icon = "coins", sections = {
         { name = "Auto Farm", items = {
             { "toggle", "Auto Farm Coins", "coins", function(v)
-                if v then
-                    table.clear(coinVisited)
-                elseif curTween then
-                    curTween:Cancel()
-                end
+                if not v and curTween then curTween:Cancel() end
             end },
             { "drop", "Farm Mode", "coinMode", { "Teleport", "Tween" } },
-            { "toggle", "Farm Noclip", "coinNoclip" },
+            { "toggle", "Noclip While Farming", "coinNoclip" },
         } },
         { name = "Tuning", items = {
-            { "slider", "Teleport Speed", "coinRate", 1, 20, 1 },
-            { "slider", "Tween Speed", "coinSpeed", 20, 200, 10 },
+            { "slider", "Teleport Speed (coins/s)", "coinTpSpeed", 1, 20, 1 },
+            { "slider", "Tween Speed (studs/s)", "coinSpeed", 20, 200, 10 },
+            { "slider", "Tween Delay (ms)", "coinDelay", 40, 500, 10 },
         } },
     } },
     { tab = "Misc", icon = "wrench", sections = {
-        { name = "Menu", items = {
-            { "drop", "Menu Size", "menuSize", { "Small", "Medium", "Large" }, function() applyMenuScale() end },
-        } },
         { name = "Utilities", items = {
+            { "slider", "Menu Size (%)", "menuScale", 50, 200, 5, function(v)
+                if not MENU_WINDOW or MENU_WINDOW.Destroyed then return end
+                local w, h, minW, minH = menuMetrics(v)
+                pcall(function()
+                    MENU_WINDOW.MinSize = Vector2.new(minW, minH)
+                    MENU_WINDOW.root.Size = UDim2.fromOffset(w, h)
+                    MENU_WINDOW._railWidth = nil
+                    MENU_WINDOW._railFloorCache = nil
+                    MENU_WINDOW:_layoutRail(false)
+                    MENU_WINDOW:_clampToViewport()
+                end)
+            end },
             { "toggle", "Anti-AFK", "antiafk" },
             { "button", "Rejoin", rejoin },
             { "button", "Server Hop", serverHop },
@@ -2274,8 +2321,6 @@ for _, t in ipairs(UI) do
         end
     end
 end
-
-RANGE.menuW, RANGE.menuH = { 380, 1400 }, { 260, 900 }
 
 local function loadSettings()
     if not canFile then return end
@@ -2396,74 +2441,6 @@ local function slateLabelSetter(id, lbl)
     end
 end
 
--- Menu size. The Slate window object exposes its frame (win.root, the same frame its resize grip changes), so the
--- size is read and written there directly: Slate itself does not remember it between sessions, this script does.
-local slateWin
-local MENU_SIZES = { Small = { 400, 270 }, Medium = { 480, 310 }, Large = { 540, 360 } }
-
-local function screenSize()
-    local cam = workspace.CurrentCamera
-    local vp = cam and cam.ViewportSize or Vector2.new(1280, 720)
-    local okI, inset = pcall(function() return game:GetService("GuiService"):GetGuiInset() end)
-    return vp + (okI and typeof(inset) == "Vector2" and inset or Vector2.zero)
-end
-
--- Menu Size (Misc tab): a fixed size picked with one tap. The window resizes around its centre and is never larger
--- than the screen.
-applyMenuScale = function()
-    local win = slateWin
-    if not win then return end   -- simple menu or not built yet
-    local root = win.root
-    if not (root and root.Parent) then
-        notify("Menu Size is not supported by this menu")
-        return
-    end
-    local preset = MENU_SIZES[S.menuSize] or MENU_SIZES.Medium
-    local screen = screenSize()
-    local minW, minH = 380, 260
-    pcall(function() minW, minH = win.MinSize.X, win.MinSize.Y end)
-    pcall(function() minW = math.max(minW, win:_contentFloor()) end)
-    local w = math.clamp(preset[1], minW, math.max(minW, screen.X - 20))
-    local h = math.clamp(preset[2], minH, math.max(minH, screen.Y - 20))
-    -- the window is anchored at its centre, so it grows and shrinks around the middle
-    root.Size = UDim2.fromOffset(w, h)
-    pcall(function() win:_clampToViewport() end)   -- keeps the window on screen after the change
-end
-
--- Slate hides the tab names (icons only) when the window is narrower than 3.6 times the widest tab name plus its
--- padding. The minimum width is raised to that, so the tabs and options stay readable at every size, Small included.
-local function keepLabelsReadable(win)
-    local ok, floor = pcall(function() return win:_railFloor() end)
-    if not (ok and type(floor) == "number") then return end
-    local labelW = math.ceil(floor * 3.6) + 4
-    -- every tab must fit at the minimum width, not only the open one (switching tabs would widen the window)
-    local opened = win.activeTab
-    for _, tab in ipairs(win.tabs or {}) do
-        if not tab.parent then
-            win.activeTab = tab
-            local okC, need = pcall(function() return win:_contentFloor() end)
-            if okC and type(need) == "number" and need > labelW then labelW = need end
-        end
-    end
-    win.activeTab = opened
-    if win.MinSize.X < labelW then
-        win.MinSize = Vector2.new(labelW, win.MinSize.Y)
-        pcall(function() win:_ensureWidth(true) end)
-    end
-end
-
-local function trackWindowSize()
-    local win = slateWin
-    if not (win and win.root and win.root.Parent) or win.Minimised then return end
-    keepLabelsReadable(win)   -- the measured tab name width can grow once the font has loaded
-    local w, h = win.root.Size.X.Offset, win.root.Size.Y.Offset
-    -- sizes outside the allowed range (hidden or collapsed menu) are not remembered
-    if w >= RANGE.menuW[1] and w <= RANGE.menuW[2] and h >= RANGE.menuH[1] and h <= RANGE.menuH[2]
-        and (math.abs(w - S.menuW) >= 2 or math.abs(h - S.menuH) >= 2) then
-        S.menuW, S.menuH = math.floor(w), math.floor(h)
-    end
-end
-
 local function buildSlate()
     local okH, src = pcall(httpGet, SLATE_URL)
     if not okH then return nil, "downloading Slate: " .. tostring(src) end
@@ -2477,20 +2454,18 @@ local function buildSlate()
     pcall(function() Slate.Theme.Preset("Violet") end)
     pcall(function() Slate:SetFontFamily("JosefinSans") end)
 
-    -- the saved size must fit on the screen with the resize grip (bottom-right corner) visible
-    local screen = screenSize()
-    local reqW = math.clamp(S.menuW, RANGE.menuW[1], math.max(RANGE.menuW[1], screen.X - 20))
-    local reqH = math.clamp(S.menuH, RANGE.menuH[1], math.max(RANGE.menuH[1], screen.Y - 20))
+    local w, h, minW, minH = menuMetrics(S.menuScale)   -- the saved Menu Size
     local okW, win = pcall(function()
         return Slate:CreateWindow({
             Name = "MM2 Hub", Subtitle = "Murder Mystery 2", Icon = "crown", Logo = true,
-            Size = UDim2.fromOffset(reqW, reqH), MinSize = Vector2.new(380, 260),
+            Size = UDim2.fromOffset(w, h), MinSize = Vector2.new(minW, minH),
             ToggleKey = Enum.KeyCode.RightShift,
         })
     end)
     if not okW or not win then return nil, "creating the window: " .. tostring(win) end
+    MENU_WINDOW = win
+    pcall(function() win:_clampToViewport() end)   -- a larger saved size must still fit on screen
     pcall(function() win:SetBackdrop("aurora") end)
-    slateWin = win
 
     local created = 0
     for _, t in ipairs(UI) do
@@ -2559,9 +2534,6 @@ local function buildSlate()
         pcall(function() win:Destroy() end)
         return nil, "Slate did not create any controls"
     end
-
-    keepLabelsReadable(win)
-    pcall(function() win:_layoutRail(false) end)
 
     local shown = true
     pcall(function() win:SetVisible(true) end)
@@ -2918,7 +2890,6 @@ end
 
 loop(0.4, refresh)
 loop(2, saveSettings)
-loop(1, trackWindowSize)
 
 -- ------------------------------------------------------------
 -- On-screen action button: "Shoot Murderer" as Sheriff, "Throw Knife" as Murderer. Draggable.
@@ -3151,15 +3122,17 @@ loop(0.12, function()
 end)
 
 -- auto farm coins
--- Teleport: hops to each coin, Teleport Speed = coins per second | Tween: smooth straight-line move at Tween Speed
--- Every coin is visited once; the next target is always the nearest coin that was not visited yet.
+-- Teleport: instant hop to each coin; Teleport Speed is how many coins per second it visits
+-- Tween: smooth straight-line move at Tween Speed, with Tween Delay between coins
+-- Every coin is visited once (see nearestCoin).
 loop(0.2, function()
     if not S.coins then return end
     local _, hum, root = myParts()
     if not (root and hum and hum.Health > 0) then return 0.5 end
     local coin, dist = nearestCoin(root)
     if not (coin and coin.Parent) then return 0.3 end
-    coinVisited[coin] = true
+    coinTries[coin] = true
+    local pause
     if S.coinMode == "Tween" then
         local goal = CFrame.new(coin.Position) * root.CFrame.Rotation
         curTween = TweenService:Create(root,
@@ -3168,16 +3141,17 @@ loop(0.2, function()
         curTween:Play()
         curTween.Completed:Wait()
         curTween = nil
+        pause = S.coinDelay / 1000
     else
         root.CFrame = CFrame.new(coin.Position) * root.CFrame.Rotation
         root.AssemblyLinearVelocity = Vector3.zero
+        pause = 1 / math.max(S.coinTpSpeed, 1)
     end
     if touch and coin.Parent then
         pcall(touch, root, coin, 0)
         pcall(touch, root, coin, 1)
     end
-    if S.coinMode == "Tween" then return 0.05 end
-    return 1 / math.max(S.coinRate, 1)
+    return pause
 end)
 
 -- auto grab gun (the gun drops when the sheriff dies; checked every 0.1 s)
