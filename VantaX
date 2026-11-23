@@ -2582,95 +2582,132 @@ quickGui.ResetOnSpawn = false
 quickGui.IgnoreGuiInset = true
 quickGui.DisplayOrder = 2147482998
 
--- look per role: gradient (top / bottom), outline, small caption and the action label
+-- look per role: accent gradient (badge + outline), icon, small caption and the action label
 local QUICK_STYLE = {
-    Murderer = { top = Color3.fromRGB(255, 104, 104), bottom = Color3.fromRGB(168, 24, 48),
-        line = Color3.fromRGB(255, 170, 170), caption = "MURDERER", label = "Throw Knife" },
-    Sheriff = { top = Color3.fromRGB(104, 168, 255), bottom = Color3.fromRGB(34, 78, 196),
-        line = Color3.fromRGB(176, 210, 255), caption = "SHERIFF", label = "Shoot Murderer" },
-    Innocent = { top = Color3.fromRGB(92, 92, 102), bottom = Color3.fromRGB(46, 46, 56),
-        line = Color3.fromRGB(128, 128, 140), caption = "INNOCENT", label = "No weapon" },
+    Murderer = { top = Color3.fromRGB(255, 96, 128), bottom = Color3.fromRGB(176, 40, 92),
+        text = Color3.fromRGB(255, 170, 190), icon = "🔪", caption = "MURDERER", label = "Throw Knife", busy = "Throwing..." },
+    Sheriff = { top = Color3.fromRGB(120, 176, 255), bottom = Color3.fromRGB(60, 100, 214),
+        text = Color3.fromRGB(176, 210, 255), icon = "🔫", caption = "SHERIFF", label = "Shoot Murderer", busy = "Shooting..." },
+    Innocent = { top = Color3.fromRGB(128, 112, 158), bottom = Color3.fromRGB(78, 64, 104),
+        text = Color3.fromRGB(160, 132, 190), icon = "🚫", caption = "INNOCENT", label = "No weapon", busy = "No weapon" },
 }
 
 local quickBtn = Instance.new("TextButton")
 quickBtn.Name = "Action"
 quickBtn.AnchorPoint = Vector2.new(0.5, 0.5)   -- centered, so the press animation shrinks it around its middle
-quickBtn.Position = UDim2.new(1, -96, 0.55, 0)
-quickBtn.Size = UDim2.fromOffset(160, 56)
+quickBtn.Position = UDim2.new(1, -100, 0.55, 0)
+quickBtn.Size = UDim2.fromOffset(172, 56)
 quickBtn.AutoButtonColor = false
-quickBtn.BackgroundColor3 = Color3.new(1, 1, 1)   -- the gradient below gives the color
+quickBtn.BackgroundColor3 = Color3.new(1, 1, 1)   -- the dark gradient below gives the color
 quickBtn.BorderSizePixel = 0
 quickBtn.Text = ""
 quickBtn.Visible = false
 quickBtn.Parent = quickGui
 
-local quickGrad, quickStroke, quickCaption, quickLabel, quickScale
+-- all parts live in one table (keeps the script well under Lua's 200-locals limit)
+local Q = {}
 do
     local c = Instance.new("UICorner")
     c.CornerRadius = UDim.new(0, 28)   -- pill
     c.Parent = quickBtn
 
-    quickGrad = Instance.new("UIGradient")
-    quickGrad.Rotation = 90
-    quickGrad.Parent = quickBtn
+    -- dark glass body, same family as the hub menu
+    local body = Instance.new("UIGradient")
+    body.Rotation = 90
+    body.Color = ColorSequence.new(Color3.fromRGB(38, 25, 55), Color3.fromRGB(20, 13, 30))
+    body.Parent = quickBtn
 
-    quickStroke = Instance.new("UIStroke")
-    quickStroke.Thickness = 1.5
-    quickStroke.Transparency = 0.1
-    quickStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    quickStroke.Parent = quickBtn
+    -- accent outline (the gradient on a UIStroke tints the border only)
+    Q.stroke = Instance.new("UIStroke")
+    Q.stroke.Thickness = 2
+    Q.stroke.Color = Color3.new(1, 1, 1)
+    Q.stroke.Transparency = 0.05
+    Q.stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    Q.stroke.Parent = quickBtn
+    Q.strokeGrad = Instance.new("UIGradient")
+    Q.strokeGrad.Rotation = 90
+    Q.strokeGrad.Parent = Q.stroke
 
-    local gloss = Instance.new("Frame")   -- soft highlight on the upper half
-    gloss.AnchorPoint = Vector2.new(0.5, 0)
-    gloss.Position = UDim2.new(0.5, 0, 0, 3)
-    gloss.Size = UDim2.new(1, -16, 0.45, 0)
-    gloss.BackgroundColor3 = Color3.new(1, 1, 1)
-    gloss.BackgroundTransparency = 0.88
-    gloss.BorderSizePixel = 0
-    gloss.Active = false
-    gloss.Parent = quickBtn
-    local gc = Instance.new("UICorner")
-    gc.CornerRadius = UDim.new(0, 24)
-    gc.Parent = gloss
+    -- round badge with the role icon
+    Q.badge = Instance.new("Frame")
+    Q.badge.AnchorPoint = Vector2.new(0, 0.5)
+    Q.badge.Position = UDim2.new(0, 7, 0.5, 0)
+    Q.badge.Size = UDim2.fromOffset(42, 42)
+    Q.badge.BackgroundColor3 = Color3.new(1, 1, 1)
+    Q.badge.BorderSizePixel = 0
+    Q.badge.Active = false
+    Q.badge.Parent = quickBtn
+    local bc = Instance.new("UICorner")
+    bc.CornerRadius = UDim.new(1, 0)
+    bc.Parent = Q.badge
+    Q.badgeGrad = Instance.new("UIGradient")
+    Q.badgeGrad.Rotation = 90
+    Q.badgeGrad.Parent = Q.badge
 
-    quickCaption = Instance.new("TextLabel")
-    quickCaption.BackgroundTransparency = 1
-    quickCaption.Position = UDim2.new(0, 0, 0, 9)
-    quickCaption.Size = UDim2.new(1, 0, 0, 12)
-    quickCaption.Font = Enum.Font.GothamMedium
-    quickCaption.TextSize = 10
-    quickCaption.TextColor3 = Color3.new(1, 1, 1)
-    quickCaption.TextTransparency = 0.25
-    quickCaption.Parent = quickBtn
+    Q.icon = Instance.new("TextLabel")
+    Q.icon.BackgroundTransparency = 1
+    Q.icon.Size = UDim2.fromScale(1, 1)
+    Q.icon.Font = Enum.Font.GothamBold
+    Q.icon.TextSize = 22
+    Q.icon.TextColor3 = Color3.new(1, 1, 1)
+    Q.icon.Parent = Q.badge
 
-    quickLabel = Instance.new("TextLabel")
-    quickLabel.BackgroundTransparency = 1
-    quickLabel.Position = UDim2.new(0, 0, 0, 22)
-    quickLabel.Size = UDim2.new(1, 0, 0, 26)
-    quickLabel.Font = Enum.Font.GothamBold
-    quickLabel.TextSize = 17
-    quickLabel.TextColor3 = Color3.new(1, 1, 1)
-    quickLabel.TextStrokeTransparency = 0.75
-    quickLabel.Parent = quickBtn
+    -- text column: caption on top, action label below, both left aligned next to the badge
+    Q.caption = Instance.new("TextLabel")
+    Q.caption.BackgroundTransparency = 1
+    Q.caption.Position = UDim2.new(0, 58, 0, 9)
+    Q.caption.Size = UDim2.new(1, -68, 0, 12)
+    Q.caption.Font = Enum.Font.GothamBold
+    Q.caption.TextSize = 10
+    Q.caption.TextXAlignment = Enum.TextXAlignment.Left
+    Q.caption.Parent = quickBtn
 
-    quickScale = Instance.new("UIScale")
-    quickScale.Parent = quickBtn
+    Q.label = Instance.new("TextLabel")
+    Q.label.BackgroundTransparency = 1
+    Q.label.Position = UDim2.new(0, 58, 0, 22)
+    Q.label.Size = UDim2.new(1, -68, 0, 26)
+    Q.label.Font = Enum.Font.GothamBold
+    Q.label.TextSize = 16
+    Q.label.TextScaled = true   -- long labels ("Shoot Murderer") shrink instead of overflowing
+    Q.label.TextXAlignment = Enum.TextXAlignment.Left
+    Q.label.TextColor3 = Color3.fromRGB(250, 246, 255)
+    Q.label.Parent = quickBtn
+    local lim = Instance.new("UITextSizeConstraint")
+    lim.MaxTextSize = 16
+    lim.MinTextSize = 10
+    lim.Parent = Q.label
+
+    Q.scale = Instance.new("UIScale")
+    Q.scale.Parent = quickBtn
 end
 
 local function applyQuickStyle(role)
     local st = QUICK_STYLE[role] or QUICK_STYLE.Innocent
-    quickGrad.Color = ColorSequence.new(st.top, st.bottom)
-    quickStroke.Color = st.line
-    quickCaption.Text = st.caption
-    quickLabel.Text = st.label
-    quickLabel.TextTransparency = (role == "Innocent") and 0.35 or 0   -- no weapon: looks switched off
+    Q.strokeGrad.Color = ColorSequence.new(st.top, st.bottom)
+    Q.badgeGrad.Color = ColorSequence.new(st.top, st.bottom)
+    Q.icon.Text = st.icon
+    Q.caption.Text = st.caption
+    Q.caption.TextColor3 = st.text
+    Q.label.Text = st.label
+    local off = (role ~= "Murderer" and role ~= "Sheriff")   -- no weapon: looks switched off
+    Q.label.TextTransparency = off and 0.4 or 0
+    Q.badge.BackgroundTransparency = off and 0.45 or 0
+    Q.icon.TextTransparency = off and 0.3 or 0
 end
 applyQuickStyle("Innocent")
 
 local function tweenQuickScale(to, seconds)
-    TweenService:Create(quickScale, TweenInfo.new(seconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    TweenService:Create(Q.scale, TweenInfo.new(seconds, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         { Scale = to }):Play()
 end
+
+-- short outline flash when the button fires
+local function pulseQuick()
+    Q.stroke.Thickness = 4
+    TweenService:Create(Q.stroke, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { Thickness = 2 }):Play()
+end
+
 track(quickBtn.MouseEnter:Connect(function() tweenQuickScale(1.05, 0.15) end))
 track(quickBtn.MouseLeave:Connect(function() tweenQuickScale(1, 0.15) end))
 mount(quickGui)
@@ -2710,8 +2747,10 @@ track(quickBtn.Activated:Connect(function()
     end
     local role = roleOf(lp)
     if role == "Sheriff" then
+        pulseQuick()
         shootMurderer(false)
     elseif role == "Murderer" then
+        pulseQuick()
         throwKnife()
     else
         notify("You have no weapon")
@@ -2728,6 +2767,11 @@ loop(0.25, function()
         quickRole = role
         applyQuickStyle(role)
     end
+    -- label follows the action in progress ("Throwing..." / "Shooting...")
+    local st = QUICK_STYLE[role] or QUICK_STYLE.Innocent
+    local busy = (role == "Murderer" and throwing) or (role == "Sheriff" and shooting)
+    local text = busy and st.busy or st.label
+    if Q.label.Text ~= text then Q.label.Text = text end
 end)
 
 -- camera: silent aim (target calculation) and its FOV circle
